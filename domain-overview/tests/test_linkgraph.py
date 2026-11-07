@@ -123,5 +123,7 @@ def test_intent_factor_discounts_navigational_mismatch():
 def test_line_weight_and_discontinued():
     from app.linkgraph import is_discontinued, LINE_WEIGHTS
     assert is_discontinued("/collections/mother-of-the-bride/jacques-vert/")
-    assert not is_discontinued("/collections/mother-of-the-bride/jacques-vertigo")
+    assert is_discontinued("/dresses/jacques-vert-jv-ebony")
+    assert not is_discontinued("/collections/mother-of-the-bride/john-charles")
+    assert not is_discontinued("/dresses/john-charles-65432")
     assert LINE_WEIGHTS["bridal"] > LINE_WEIGHTS["mob"] > LINE_WEIGHTS["bridesmaids"]

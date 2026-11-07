@@ -1,6 +1,7 @@
 """Internal link-strength model. Pure: takes page, link and Search Console dicts, returns metrics."""
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
 import math
 import os
 import re
@@ -29,13 +30,14 @@ def _weights(raw: str) -> dict[str, float]:
 LINE_WEIGHTS = {"bridal": 1.0, "mob": 0.6, "bridesmaids": 0.4, "general": 0.5, "accessories": 0.2,
                 **_weights(os.environ.get("LINE_WEIGHTS", ""))}
 # Discontinued ranges (last stock only, can't reorder): don't build links in; route their traffic out.
-DISCONTINUED = tuple(p.strip().rstrip("/") for p in os.environ.get(
-    "DISCONTINUED", "/collections/mother-of-the-bride/jacques-vert").split(",") if p.strip())
+# Comma-separated path globs.
+DISCONTINUED = tuple(p.strip() for p in os.environ.get(
+    "DISCONTINUED", "/collections/mother-of-the-bride/jacques-vert,/dresses/jacques-vert-*").split(",") if p.strip())
 
 
 def is_discontinued(path: str) -> bool:
-    path = path.rstrip("/")
-    return any(path == d or path.startswith(d + "/") for d in DISCONTINUED)
+    path = path.rstrip("/") or "/"
+    return any(fnmatchcase(path, d.rstrip("/") or "/") for d in DISCONTINUED)
 COLLECTION_LINE = {"bridal": "bridal", "bridesmaids": "bridesmaids", "mother-of-the-bride": "mob",
                    "accessories": "accessories"}
 LINE_ROOT = {"bridal": "/collections/bridal", "bridesmaids": "/collections/bridesmaids",
