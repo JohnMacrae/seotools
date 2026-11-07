@@ -128,3 +128,13 @@ def test_line_weight_and_discontinued():
     assert not is_discontinued("/collections/mother-of-the-bride/john-charles")
     assert not is_discontinued("/dresses/john-charles-65432")
     assert LINE_WEIGHTS["bridal"] > LINE_WEIGHTS["mob"] > LINE_WEIGHTS["bridesmaids"]
+
+
+def test_discontinued_still_gets_opportunity():
+    from app.linkgraph import strength
+    pages = [page("/"), page("/collections/bridal/sophia-tolli")]
+    links = [link("/", "/collections/bridal/sophia-tolli")]
+    gp = [dict(page=U("/collections/bridal/sophia-tolli"), clicks=5, impressions=500, ctr=.01, position=9.0)]
+    gr = [dict(page=U("/collections/bridal/sophia-tolli"), query="sophia tolli", clicks=5, impressions=500, ctr=.01, position=9.0)]
+    st = next(p for p in strength(pages, links, gp, gr)["pages"] if "tolli" in p["url"])
+    assert st["discontinued"] and st["opportunity"] > 0

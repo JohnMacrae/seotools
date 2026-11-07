@@ -29,7 +29,8 @@ def _weights(raw: str) -> dict[str, float]:
 # Business priority per product line (bridal first, then MOB). Multiplies opportunity.
 LINE_WEIGHTS = {"bridal": 1.0, "mob": 0.6, "bridesmaids": 0.4, "general": 0.5, "accessories": 0.2,
                 **_weights(os.environ.get("LINE_WEIGHTS", ""))}
-# Discontinued ranges (last stock only, can't reorder): don't build links in; route their traffic out.
+# Discontinued ranges (last stock only, can't reorder): still linkable while unsold; links to them are
+# marked temporary and their traffic is routed to live ranges.
 # Comma-separated path globs.
 DISCONTINUED = tuple(p.strip() for p in os.environ.get(
     "DISCONTINUED", "/collections/mother-of-the-bride/jacques-vert,/dresses/jacques-vert-*,"
@@ -302,7 +303,9 @@ def strength(pages: list[dict], links: list[dict], gsc_pages: list[dict], gsc_ro
         })
         r = rows[-1]
         r["discontinued"] = is_discontinued(_path(u))
-        r["opportunity"] = 0.0 if r["discontinued"] else round(r["raw_opportunity"] * LINE_WEIGHTS.get(r["line"], 1.0), 2)
+        # Discontinued = last stock: still a valid target while unsold; the label lets the plan
+        # treat its links as temporary and send its traffic on to live ranges once sold.
+        r["opportunity"] = round(r["raw_opportunity"] * LINE_WEIGHTS.get(r["line"], 1.0), 2)
 
     per_line: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
