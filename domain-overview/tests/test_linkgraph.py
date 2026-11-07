@@ -118,3 +118,10 @@ def test_intent_factor_discounts_navigational_mismatch():
     assert uplift(50, 0, 8) > 0.5 * 50 * (0.11 - 0.03)
     # query clicking at/above expected rate keeps full weight
     assert uplift(1000, 40, 7) == 1000 * (0.11 - 0.04)
+
+
+def test_line_weight_and_discontinued():
+    from app.linkgraph import is_discontinued, LINE_WEIGHTS
+    assert is_discontinued("/collections/mother-of-the-bride/jacques-vert/")
+    assert not is_discontinued("/collections/mother-of-the-bride/jacques-vertigo")
+    assert LINE_WEIGHTS["bridal"] > LINE_WEIGHTS["mob"] > LINE_WEIGHTS["bridesmaids"]

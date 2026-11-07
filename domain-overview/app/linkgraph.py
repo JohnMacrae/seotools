@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import Counter, defaultdict
 from urllib.parse import urlsplit
@@ -14,6 +15,27 @@ DAMPING, ITERATIONS, TOLERANCE = 0.85, 50, 1e-6
 LOG_DECADES = 3               # PR this many orders of magnitude below the top page scores 0
 
 LINES = ("bridal", "bridesmaids", "mob", "accessories", "general")
+
+
+def _weights(raw: str) -> dict[str, float]:
+    out = {}
+    for part in filter(None, (p.strip() for p in raw.split(","))):
+        k, _, v = part.partition("=")
+        out[k.strip()] = float(v)
+    return out
+
+
+# Business priority per product line (bridal first, then MOB). Multiplies opportunity.
+LINE_WEIGHTS = {"bridal": 1.0, "mob": 0.6, "bridesmaids": 0.4, "general": 0.5, "accessories": 0.2,
+                **_weights(os.environ.get("LINE_WEIGHTS", ""))}
+# Discontinued ranges (last stock only, can't reorder): don't build links in; route their traffic out.
+DISCONTINUED = tuple(p.strip().rstrip("/") for p in os.environ.get(
+    "DISCONTINUED", "/collections/mother-of-the-bride/jacques-vert").split(",") if p.strip())
+
+
+def is_discontinued(path: str) -> bool:
+    path = path.rstrip("/")
+    return any(path == d or path.startswith(d + "/") for d in DISCONTINUED)
 COLLECTION_LINE = {"bridal": "bridal", "bridesmaids": "bridesmaids", "mother-of-the-bride": "mob",
                    "accessories": "accessories"}
 LINE_ROOT = {"bridal": "/collections/bridal", "bridesmaids": "/collections/bridesmaids",
@@ -273,8 +295,11 @@ def strength(pages: list[dict], links: list[dict], gsc_pages: list[dict], gsc_ro
             "top_queries": [{"query": r["query"], "impressions": r["impressions"], "clicks": r["clicks"],
                              "position": round(r["position"], 1)} for r in qs[:5]],
             "potential": round(potential, 2),
-            "opportunity": round(potential / (1 + s / 10), 2) if g else 0.0,
+            "raw_opportunity": round(potential / (1 + s / 10), 2) if g else 0.0,
         })
+        r = rows[-1]
+        r["discontinued"] = is_discontinued(_path(u))
+        r["opportunity"] = 0.0 if r["discontinued"] else round(r["raw_opportunity"] * LINE_WEIGHTS.get(r["line"], 1.0), 2)
 
     per_line: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
