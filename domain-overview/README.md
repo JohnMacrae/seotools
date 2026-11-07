@@ -40,7 +40,11 @@ The **Health** tab shows orphans, contextual orphans (linked only from nav/foote
 dead ends, non-indexable pages, title/H1/description problems, click depth and pages by section. Results are linkable with `?crawl=ID`.
 Other tabs (strength, topic map, template rules, to-dos) are placeholders for later work.
 
-Tests: `python3 -m pytest tests` (needs `pytest`, `httpx`, `fastapi`).
+Tests (no host Python needed; installs `requirements-dev.txt` in a throwaway python:3.12 container and runs all of `tests/`):
+
+```
+cd domain-overview && docker compose run --rm tests
+```
 
 ## Deploy on dnas
 

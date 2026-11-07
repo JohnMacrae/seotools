@@ -112,7 +112,7 @@ async function watch(id) {
 let cur = null;
 function renderCrawl(c, h) {
   cur = { c, h, strength: null, plans: [], plan: null, planId: null, line: "all", tab: new URLSearchParams(location.search).get("tab") || "Health" };
-  $("#app").innerHTML = `<div class="tabs">${TABS.map(t => `<button data-tab="${t}" ${["Health", "Strength", "Topic map", "Template rules", "Link to-dos"].includes(t) ? "" : "disabled title=\"Coming later\""}>${t}</button>`).join("")}</div>
+  $("#app").innerHTML = `<div class="tabs">${TABS.map(t => `<button data-tab="${t}" >${t}</button>`).join("")}</div>
     <div class="sub" style="margin-bottom:12px">Crawl #${c.id} of ${esc(c.domain)} · ${esc(c.started_at.replace("T", " "))} · <a href="linking">all crawls</a></div>
     <div id="tab"></div>`;
   showTab(cur.tab);
@@ -121,9 +121,11 @@ function renderCrawl(c, h) {
 async function showTab(t) {
   cur.tab = t;
   document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
-  clearInterval(planTimer);
+  clearInterval(planTimer); clearInterval(gapTimer);
   if (t === "Health") { $("#tab").innerHTML = healthTab(cur.h); return; }
   if (PLAN_TABS.includes(t)) { await loadPlans(); return; }
+  if (t === "Pages to build") { await loadGaps(); return; }
+  if (t === "Progress") { await loadProgress(); return; }
   if (!cur.strength) {
     $("#tab").innerHTML = `<div class="sub">Loading Search Console data and link strength…</div>`;
     const r = await fetch(`api/crawl/${cur.c.id}/strength`);
@@ -314,6 +316,157 @@ document.addEventListener("click", e => {
 document.addEventListener("change", e => {
   if (e.target.id === "planpick") { cur.planId = +e.target.value; pollPlan(); }
 });
+
+
+// ---- Pages to build ----
+const SRC_NAMES = { gsc: "Search Console", competitor: "competitor", ideas: "keyword ideas" };
+const badges = srcs => (srcs || []).map(x => `<span class="badge">${esc(SRC_NAMES[x] || x)}</span>`).join(" ");
+let gapTimer = null;
+const GCOLS = [["title", "Title", 0], ["slug", "Slug", 0], ["line", "Line", 0], ["primary_keyword", "Primary keyword", 0],
+  ["volume", "Monthly volume", 1], ["sources", "Sources", 0], ["why", "Why", 0]];
+
+async function loadGaps(pickId) {
+  const runs = await fetch(`api/crawl/${cur.c.id}/gaps`).then(r => r.ok ? r.json() : []);
+  cur.gaps = runs;
+  const sel = runs.find(g => String(g.id) === String(pickId ?? cur.gapId)) || runs.find(g => g.status === "done") || runs[0];
+  cur.gapId = sel ? sel.id : null;
+  cur.gline = cur.gline || "all"; cur.gsort = cur.gsort || { key: "score", dir: -1 };
+  if (!sel) { cur.gap = null; renderGaps(); return; }
+  await pollGaps();
+}
+
+async function pollGaps() {
+  clearInterval(gapTimer);
+  const tick = async () => {
+    const r = await fetch("api/gaps/" + cur.gapId);
+    if (!r.ok) { clearInterval(gapTimer); return; }
+    cur.gap = await r.json();
+    if (cur.gap.status !== "running") { clearInterval(gapTimer); cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json()); }
+    if (cur.tab === "Pages to build") renderGaps();
+    return cur.gap.status;
+  };
+  if ((await tick()) === "running") gapTimer = setInterval(tick, 2000);
+}
+
+async function startGaps() {
+  const r = await fetch(`api/crawl/${cur.c.id}/gaps`, { method: "POST" });
+  const d = await r.json();
+  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); return; }
+  cur.gapId = d.id;
+  cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json());
+  pollGaps();
+}
+
+function gapRows(d) {
+  const { key, dir } = cur.gsort;
+  const val = r => key === "sources" ? (r.sources || []).join(",") : r[key];
+  return (d.pages || []).filter(r => cur.gline === "all" || r.line === cur.gline).sort((a, b) => {
+    const x = val(a), y = val(b);
+    if (x == null || x === "") return 1;
+    if (y == null || y === "") return -1;
+    return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * dir;
+  });
+}
+
+function renderGaps() {
+  const g = cur.gap, running = g && g.status === "running";
+  const picker = (cur.gaps || []).length > 1 ? `<select id="gappick">${cur.gaps.map(x => `<option value="${x.id}" ${x.id === cur.gapId ? "selected" : ""}>#${x.id} · ${esc(x.created_at.replace("T", " "))} · ${esc(x.status)}</option>`).join("")}</select>` : "";
+  let h = `<div class="planbar"><button id="findgaps" ${running ? "disabled" : ""}>Find page gaps</button>${picker}
+    ${running ? `<span class="sub">${esc(g.progress || "Working…")}</span>` : ""}</div>`;
+  if (!g) { $("#tab").innerHTML = h + `<div class="sub">No page-gap run for this crawl yet. Click "Find page gaps". This only recommends pages; nothing is created on the site.</div>`; return; }
+  if (g.status === "error") { $("#tab").innerHTML = h + `<div class="err">Gap run failed: ${esc(g.error)}</div>`; return; }
+  if (running || !g.data) { $("#tab").innerHTML = h; return; }
+  const d = g.data, lines = {};
+  for (const p of d.pages) lines[p.line] = (lines[p.line] || 0) + 1;
+  const chip = (k, name, n) => `<button data-gline="${k}" class="${cur.gline === k ? "on" : ""}">${name}<small>${fmt(n)} pages</small></button>`;
+  const rows = gapRows(d), { key, dir } = cur.gsort;
+  h += `<div class="sub" style="margin-bottom:10px">Run #${g.id} · ${d.llm_used ? "model " + esc(d.model) : "built without the model"} · cost $${(g.cost || 0).toFixed(3)} ·
+    ${fmt(d.sources.gsc)} Search Console, ${fmt(d.sources.competitor)} competitor, ${fmt(d.sources.ideas)} keyword-idea keywords · ${fmt(d.dropped_covered)} dropped as already covered</div>`;
+  if (d.llm_used === false) h += `<div class="note" style="margin:0 0 10px">Built without the model: one generic page per keyword cluster</div>`;
+  h += (d.warnings || []).slice(0, 8).map(w => `<div class="err">${esc(w)}</div>`).join("");
+  h += `<div class="chips">${chip("all", "All", d.pages.length)}${Object.keys(LINE_NAMES).map(k => chip(k, LINE_NAMES[k], lines[k] || 0)).join("")}</div>
+    <div class="card"><h2>Pages to build <small class="sub">Score = monthly volume × (1 − difficulty) × line weight, ×1.5 when Google already shows us for it. "~" = estimated from Search Console impressions ÷ 3. Click a row for details.</small></h2>
+    ${rows.length ? `<div class="scroll" style="max-height:700px"><table><tr>${GCOLS.map(([k, n, num]) => `<th data-gsort="${k}" ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
+    ${rows.map(r => `<tr class="row" data-gap="1"><td><b>${esc(r.title)}</b><div class="sub">${esc(r.page_type)}</div></td><td class="wrap">${esc(r.slug)}</td><td>${esc(LINE_NAMES[r.line] || r.line)}</td>
+      <td>${esc(r.primary_keyword)}</td><td class="num">${r.volume_is_proxy ? "~" : ""}${fmt(r.volume)}</td><td>${badges(r.sources)}</td><td>${esc(r.why)}</td></tr>
+      <tr class="more" hidden><td colspan="7">
+        <div><b>Secondary keywords:</b> ${r.secondary_keywords.length ? r.secondary_keywords.map(esc).join(", ") : "—"}</div>
+        <div><b>Hub:</b> ${r.hub ? link(r.hub) : "—"}</div>
+        <div><b>Link to it from:</b> ${r.link_from.length ? r.link_from.map(link).join(" · ") : "—"}</div>
+        ${r.gsc && r.gsc.impressions ? `<div><b>Search Console:</b> ${fmt(r.gsc.impressions)} impressions in 90 days${r.gsc.best_position ? `, best position ${r.gsc.best_position}` : ""}</div>` : ""}
+        <div><b>Competitor URLs:</b> ${r.competitor_urls.length ? r.competitor_urls.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\//, ""))}</a>`).join(" · ") : "—"}</div>
+        <div class="sub">Score ${fmt(r.score)}${r.kd != null ? ` · difficulty ${Math.round(r.kd)}` : " · difficulty unknown"}</div></td></tr>`).join("")}</table></div>` : `<div class="sub">No proposed pages for this filter.</div>`}</div>
+    <div class="card"><h2>Improve existing pages instead <small class="sub">${fmt((d.improve || []).length)} pages</small></h2>
+    ${(d.improve || []).length ? d.improve.map(i => `<div class="todo"><div class="wrap">${link(i.url)}<div class="sub">${esc(i.title || "")}</div></div>
+      <div><div>${i.keywords.map(esc).join(", ")}</div><div class="sub">${esc(i.why)}</div></div></div>`).join("") : `<div class="sub">None.</div>`}</div>`;
+  $("#tab").innerHTML = h;
+}
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (!cur || cur.tab !== "Pages to build") return;
+  if (t.id === "findgaps") { startGaps(); return; }
+  const chip = t.closest("button[data-gline]"), th = t.closest("th[data-gsort]"), row = t.closest("tr.row[data-gap]");
+  if (chip) cur.gline = chip.dataset.gline;
+  else if (th) { const k = th.dataset.gsort; cur.gsort = { key: k, dir: cur.gsort.key === k ? -cur.gsort.dir : (["title", "slug", "line", "primary_keyword", "sources", "why"].includes(k) ? 1 : -1) }; }
+  else if (row && !t.closest("a")) { row.nextElementSibling.hidden = !row.nextElementSibling.hidden; return; }
+  else return;
+  renderGaps();
+});
+document.addEventListener("change", e => { if (e.target.id === "gappick") { cur.gapId = +e.target.value; pollGaps(); } });
+
+// ---- Progress ----
+const ST_CLASS = { done: "pass", partial: "partial", missing: "fail", gone: "fail", open: "" };
+
+async function loadProgress(pickId) {
+  const plans = (await fetch(`api/crawl/${cur.c.id}/plans`).then(r => r.ok ? r.json() : [])).filter(p => p.status === "done");
+  cur.pplans = plans;
+  const sel = plans.find(p => String(p.id) === String(pickId ?? cur.pplan)) || plans[0];
+  cur.pplan = sel ? sel.id : null;
+  cur.prog = null; cur.pnote = null;
+  if (sel) { const r = await fetch(`api/plan/${sel.id}/progress`); if (r.ok) cur.prog = await r.json(); }
+  renderProgress();
+}
+
+async function checkPlan() {
+  const b = $("#checkplan"); b.disabled = true; b.textContent = "Checking…";
+  const r = await fetch(`api/plan/${cur.pplan}/check`, { method: "POST" });
+  const d = await r.json();
+  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); b.disabled = false; b.textContent = "Check against latest crawl"; return; }
+  cur.prog = d; renderProgress();
+}
+
+function gscCell(g) {
+  if (!g) return `<span class="sub">no data yet</span>`;
+  const f = (a, b, dec) => `${a == null ? "—" : Number(a).toFixed(dec ?? 0)} → ${b == null ? "—" : Number(b).toFixed(dec ?? 0)}`;
+  return `<div>${f(g.before.clicks, g.after.clicks)} clicks</div><div>${f(g.before.impressions, g.after.impressions)} impr</div>
+    <div>pos ${f(g.before.position, g.after.position, 1)}</div><div class="sub">${g.days} days either side</div>`;
+}
+
+function renderProgress() {
+  const p = cur.prog, plans = cur.pplans || [];
+  const picker = plans.length ? `<select id="pplanpick">${plans.map(x => `<option value="${x.id}" ${x.id === cur.pplan ? "selected" : ""}>Plan #${x.id} · ${esc(x.created_at.replace("T", " "))}</option>`).join("")}</select>` : "";
+  let h = `<div class="planbar">${picker}<button id="checkplan" ${plans.length ? "" : "disabled"}>Check against latest crawl</button></div>
+    <div class="note" style="margin:0 0 12px">Re-crawl first after making changes.</div>`;
+  if (!plans.length) { $("#tab").innerHTML = h + `<div class="sub">No finished link plan for this crawl. Build one on the Link to-dos tab first.</div>`; return; }
+  if (!p) { $("#tab").innerHTML = h; return; }
+  const c = p.counts;
+  h += (p.notes || []).map(n => `<div class="err">${esc(n)}</div>`).join("");
+  h += p.checked_crawl_id ? `<div class="sub" style="margin-bottom:10px">Checked against crawl #${p.checked_crawl_id}</div>` : `<div class="sub" style="margin-bottom:10px">Not checked yet.</div>`;
+  h += `<div class="grid tiles">${tile("Done", c.done, "Contextual link in place")}${tile("Partial", c.partial, "Linked, but not in the content")}${tile("Missing", c.missing, "No link yet")}
+    ${tile("Gone", c.gone, "Source or target no longer a 200 page")}${tile("% done", p.pct_done, `of ${fmt(p.total)} links`)}</div>
+    <div class="card"><h2>Suggestions</h2><div class="scroll" style="max-height:640px"><table class="sortable"><tr><th>From</th><th>To</th><th>Anchor</th><th>Status</th><th>Search Console, target page</th></tr>
+    ${p.suggestions.map(s => `<tr><td class="wrap">${link(s.src)}</td><td class="wrap">${link(s.dst)}</td><td>${esc(s.anchor || "")}</td>
+      <td><span class="badge ${ST_CLASS[s.status] || ""}">${esc(s.status)}</span>${s.done_at ? `<div class="sub">done ${esc(s.done_at.slice(0, 10))}</div>` : ""}</td>
+      <td>${s.status === "done" ? gscCell(s.gsc) : ""}</td></tr>`).join("")}</table></div></div>
+    <div class="card"><h2>Pages built <small class="sub">proposed pages from the latest gap run that now exist</small></h2>
+    ${(p.built || []).length ? `<table><tr><th>Proposed page</th><th>Slug</th><th>Status</th></tr>${p.built.map(b => `<tr><td>${esc(b.title)}</td><td class="wrap">${b.url ? link(b.url) : esc(b.slug)}</td>
+      <td><span class="badge ${b.built ? "pass" : ""}">${b.built ? "built" : "not yet"}</span></td></tr>`).join("")}</table>` : `<div class="sub">${p.checked_crawl_id ? "No page-gap run to compare with." : "Check against a crawl first."}</div>`}</div>`;
+  $("#tab").innerHTML = h;
+}
+
+document.addEventListener("click", e => { if (cur?.tab === "Progress" && e.target.id === "checkplan") checkPlan(); });
+document.addEventListener("change", e => { if (e.target.id === "pplanpick") loadProgress(+e.target.value); });
 
 
 function tile(label, n, sub, bad) {

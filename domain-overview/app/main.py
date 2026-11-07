@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, gsc, health, linkgraph
+from . import compare, crawl, dfs, gsc, health, linkgraph, pagegap, progress
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
 CACHE_DAYS = int(os.environ.get("CACHE_DAYS", "7"))
@@ -120,6 +120,22 @@ def db() -> sqlite3.Connection:
             checked_crawl_id INTEGER,
             PRIMARY KEY(plan_id, src, dst))"""
     )
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS gaps (
+            id INTEGER PRIMARY KEY,
+            crawl_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            progress TEXT,
+            error TEXT,
+            cost REAL,
+            data TEXT)"""
+    )
+    have = {r[1] for r in con.execute("PRAGMA table_info(suggestions)")}
+    for col, typ in (("done_at", "TEXT"), ("done_crawl_id", "INTEGER")):
+        if col not in have:
+            con.execute(f"ALTER TABLE suggestions ADD COLUMN {col} {typ}")
     gsc.ensure_tables(con)
     return con
 
@@ -127,14 +143,11 @@ def db() -> sqlite3.Connection:
 @app.on_event("startup")
 def _mark_interrupted():
     with closing(db()) as con:
-        con.execute(
-            "UPDATE crawls SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
-            (dt.datetime.utcnow().isoformat(timespec="seconds"),),
-        )
-        con.execute(
-            "UPDATE plans SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
-            (dt.datetime.utcnow().isoformat(timespec="seconds"),),
-        )
+        for table in ("crawls", "plans", "gaps"):
+            con.execute(
+                f"UPDATE {table} SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
+                (dt.datetime.utcnow().isoformat(timespec="seconds"),),
+            )
         con.commit()
 
 
@@ -472,6 +485,167 @@ def list_plans(crawl_id: int):
             "SELECT id,crawl_id,created_at,finished_at,status,progress,error,model,cost FROM plans "
             "WHERE crawl_id=? ORDER BY id DESC LIMIT 30", (crawl_id,)).fetchall()
     return [dict(r) for r in rows]
+
+
+def _gsc_rows(con, crawl_row, pages) -> list[dict]:
+    """Page x query rows from the latest Search Console fetch (call after _strength has refreshed it)."""
+    if not gsc.configured():
+        return []
+    fetch = gsc.latest(con)
+    if not fetch:
+        return []
+    host = urlsplit(pages[0]["url"]).hostname if pages else crawl_row["domain"]
+    return gsc.load(con, fetch["id"], host)[1]
+
+
+async def _run_gaps(gap_id: int, crawl_id: int):
+    def set_progress(msg: str):
+        with closing(db()) as con:
+            con.execute("UPDATE gaps SET progress=? WHERE id=?", (str(msg), gap_id))
+            con.commit()
+
+    try:
+        with closing(db()) as con:
+            crawl_row, pages, _links, strength, _info = _strength(con, crawl_id)
+            rows = _gsc_rows(con, crawl_row, pages)
+            comp = con.execute("SELECT data FROM comparisons WHERE domain=? ORDER BY fetched_at DESC LIMIT 1",
+                               (crawl_row["domain"],)).fetchone()
+        data = await pagegap.build_gaps(pages, strength, rows, json.loads(comp["data"]) if comp else None,
+                                        progress=set_progress)
+        with closing(db()) as con:
+            con.execute("UPDATE gaps SET status='done', finished_at=?, progress=NULL, cost=?, data=? WHERE id=?",
+                        (_now(), data.get("cost"), json.dumps(data), gap_id))
+            con.commit()
+    except Exception as e:  # noqa: BLE001
+        with closing(db()) as con:
+            con.execute("UPDATE gaps SET status='error', error=?, finished_at=? WHERE id=?",
+                        (f"{type(e).__name__}: {e}"[:500], _now(), gap_id))
+            con.commit()
+
+
+@app.post("/api/crawl/{crawl_id}/gaps")
+async def start_gaps(crawl_id: int):
+    with closing(db()) as con:
+        if not con.execute("SELECT 1 FROM crawls WHERE id=?", (crawl_id,)).fetchone():
+            raise HTTPException(404, "Crawl not found")
+        if con.execute("SELECT 1 FROM gaps WHERE crawl_id=? AND status='running'", (crawl_id,)).fetchone():
+            raise HTTPException(409, "A page-gap run for this crawl is already running")
+        cur = con.execute("INSERT INTO gaps(crawl_id, created_at, status, progress) VALUES (?,?,'running','Starting')",
+                          (crawl_id, _now()))
+        con.commit()
+        gap_id = cur.lastrowid
+    task = asyncio.create_task(_run_gaps(gap_id, crawl_id))
+    _crawl_tasks.add(task)
+    task.add_done_callback(_crawl_tasks.discard)
+    return {"id": gap_id}
+
+
+@app.get("/api/gaps/{gap_id}")
+def get_gaps(gap_id: int):
+    with closing(db()) as con:
+        row = con.execute("SELECT * FROM gaps WHERE id=?", (gap_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Gap run not found")
+    d = dict(row)
+    d["data"] = json.loads(d["data"]) if d["data"] else None
+    return d
+
+
+@app.get("/api/crawl/{crawl_id}/gaps")
+def list_gaps(crawl_id: int):
+    with closing(db()) as con:
+        rows = con.execute("SELECT id,crawl_id,created_at,finished_at,status,progress,error,cost FROM gaps "
+                           "WHERE crawl_id=? ORDER BY id DESC LIMIT 30", (crawl_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _gsc_change(con, rows: list[dict]) -> str | None:
+    """Fills r['gsc'] for done rows from stored daily data. Returns a note when there is nothing to show."""
+    done = [r for r in rows if r["status"] == "done" and r["done_at"]]
+    if not done:
+        return None
+    end = con.execute("SELECT MAX(date) FROM gsc_daily").fetchone()[0]
+    if not end:
+        return "No daily Search Console data stored for the targets yet."
+    end = dt.date.fromisoformat(end)
+    for r in done:
+        host = urlsplit(r["dst"]).hostname
+        page = gsc.normalise(r["dst"], gsc.site_host() or host) or r["dst"]
+        daily = [dict(x) for x in con.execute("SELECT date,clicks,impressions,position FROM gsc_daily WHERE page=?", (page,))]
+        r["gsc"] = gsc.window_stats(daily, dt.date.fromisoformat(r["done_at"][:10]), end)
+    return None
+
+
+def _progress(con, plan_id: int, note: str | None = None) -> dict:
+    plan = con.execute("SELECT * FROM plans WHERE id=?", (plan_id,)).fetchone()
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    rows = [dict(r) for r in con.execute(
+        "SELECT src,dst,anchor,kind,status,checked_crawl_id,done_at,done_crawl_id FROM suggestions WHERE plan_id=? "
+        "ORDER BY dst,src", (plan_id,))]
+    for r in rows:
+        r["gsc"] = None
+    gsc_note = _gsc_change(con, rows)
+    counts = {k: sum(r["status"] == k for r in rows) for k in ("done", "partial", "missing", "gone", "open")}
+    checked = max((r["checked_crawl_id"] for r in rows if r["checked_crawl_id"]), default=None)
+    built = []
+    if checked:
+        crawl_row = con.execute("SELECT domain FROM crawls WHERE id=?", (checked,)).fetchone()
+        g = con.execute("SELECT g.data FROM gaps g JOIN crawls c ON c.id=g.crawl_id WHERE c.domain=? AND g.status='done' "
+                        "ORDER BY g.id DESC LIMIT 1", (crawl_row["domain"],)).fetchone() if crawl_row else None
+        if g:
+            pages = [dict(p) for p in con.execute("SELECT url,status FROM pages WHERE crawl_id=?", (checked,))]
+            built = progress.built_pages(json.loads(g["data"]).get("pages", []), pages)
+    n = len(rows)
+    return {"plan_id": plan_id, "crawl_id": plan["crawl_id"], "checked_crawl_id": checked, "counts": counts, "total": n,
+            "pct_done": round(100 * counts["done"] / n, 1) if n else 0, "suggestions": rows, "built": built,
+            "notes": [x for x in (note, gsc_note) if x]}
+
+
+@app.post("/api/plan/{plan_id}/check")
+def check_plan(plan_id: int, crawl: int | None = None):
+    """Re-check a plan's suggestions against a crawl (default: latest done crawl of the plan's domain)."""
+    with closing(db()) as con:
+        plan = con.execute("SELECT * FROM plans WHERE id=?", (plan_id,)).fetchone()
+        if not plan:
+            raise HTTPException(404, "Plan not found")
+        dom = con.execute("SELECT domain FROM crawls WHERE id=?", (plan["crawl_id"],)).fetchone()["domain"]
+        if crawl is None:
+            row = con.execute("SELECT id FROM crawls WHERE domain=? AND status='done' ORDER BY id DESC LIMIT 1", (dom,)).fetchone()
+            if not row:
+                raise HTTPException(404, "No finished crawl for this domain")
+            crawl = row["id"]
+        crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl,)).fetchone()
+        if not crawl_row:
+            raise HTTPException(404, "Crawl not found")
+        pages, links = _crawl_data(con, crawl)
+        sugg = [dict(r) for r in con.execute("SELECT * FROM suggestions WHERE plan_id=?", (plan_id,))]
+        result = progress.check_links(sugg, pages, links)
+        when = (crawl_row["finished_at"] or crawl_row["started_at"])
+        for s in sugg:
+            st = result[(s["src"], s["dst"])]
+            con.execute("UPDATE suggestions SET status=?, checked_crawl_id=?, done_at=COALESCE(done_at, ?), "
+                        "done_crawl_id=COALESCE(done_crawl_id, ?) WHERE plan_id=? AND src=? AND dst=?",
+                        (st, crawl, when if st == "done" else None, crawl if st == "done" else None, plan_id, s["src"], s["dst"]))
+            s["status"] = st
+        con.commit()
+        note = None
+        targets = sorted({s["dst"] for s in sugg if s["status"] == "done"})
+        if targets:
+            if gsc.configured():
+                try:
+                    gsc.fetch_daily(con, [gsc.normalise(t, gsc.site_host() or urlsplit(t).hostname) or t for t in targets])
+                except gsc.GSCError as e:
+                    note = f"Search Console daily data not updated: {e}"
+            else:
+                note = "Search Console is not configured; clicks and impressions before/after are skipped."
+        return _progress(con, plan_id, note)
+
+
+@app.get("/api/plan/{plan_id}/progress")
+def plan_progress(plan_id: int):
+    with closing(db()) as con:
+        return _progress(con, plan_id)
 
 
 @app.get("/healthz")

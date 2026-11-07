@@ -61,6 +61,9 @@ def ensure_tables(con: sqlite3.Connection):
     con.execute("""CREATE TABLE IF NOT EXISTS gsc_pages (
         fetch_id INTEGER NOT NULL, page TEXT NOT NULL,
         clicks REAL, impressions REAL, ctr REAL, position REAL)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS gsc_daily (
+        page TEXT NOT NULL, date TEXT NOT NULL, clicks REAL, impressions REAL, position REAL,
+        PRIMARY KEY(page, date))""")
     con.execute("CREATE INDEX IF NOT EXISTS ix_gsc_rows ON gsc_rows(fetch_id)")
     con.execute("CREATE INDEX IF NOT EXISTS ix_gsc_pages ON gsc_pages(fetch_id)")
 
@@ -161,3 +164,68 @@ def load(con: sqlite3.Connection, fetch_id: int, host: str) -> tuple[list[dict],
     pages = conv(con.execute("SELECT page,clicks,impressions,ctr,position FROM gsc_pages WHERE fetch_id=?", (fetch_id,)))
     rows = conv(con.execute("SELECT page,query,clicks,impressions,ctr,position FROM gsc_rows WHERE fetch_id=?", (fetch_id,)))
     return pages, rows
+
+
+DAILY_CHUNK = 25  # pages per request: the page filter is one regex, so keep it short
+
+
+def _page_regex(pages: list[str], host: str) -> str:
+    """RE2 regex matching these crawl-form URLs with or without www and a trailing slash."""
+    paths = "|".join(re.escape(urlsplit(p).path.rstrip("/") or "/") for p in pages)
+    return rf"^https?://(www\.)?{re.escape(host.removeprefix('www.'))}({paths})/?$"
+
+
+def fetch_daily(con: sqlite3.Connection, pages: list[str], days: int = 120) -> int:
+    """Daily clicks/impressions/position for these pages (dimensions page, date) into gsc_daily. Returns rows stored."""
+    if not configured():
+        raise GSCError("Search Console not configured")
+    ensure_tables(con)
+    host = site_host()
+    end = dt.date.today() - dt.timedelta(days=LAG_DAYS)
+    start = end - dt.timedelta(days=days)
+    acc: dict[tuple[str, str], list] = {}
+    try:
+        token = _token()
+        with httpx.Client(timeout=120) as client:
+            for i in range(0, len(pages), DAILY_CHUNK):
+                rows = _query(client, token, {
+                    "startDate": start.isoformat(), "endDate": end.isoformat(), "dataState": "final",
+                    "dimensions": ["page", "date"],
+                    "dimensionFilterGroups": [{"filters": [{"dimension": "page", "operator": "includingRegex",
+                                                            "expression": _page_regex(pages[i:i + DAILY_CHUNK], host)}]}]})
+                for r in rows:
+                    page = normalise(r["keys"][0], host)
+                    if not page:
+                        continue
+                    a = acc.setdefault((page, r["keys"][1]), [0.0, 0.0, 0.0])
+                    a[0] += r["clicks"]
+                    a[1] += r["impressions"]
+                    a[2] += r["position"] * r["impressions"]
+    except GSCError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise GSCError(f"{type(e).__name__}: {e}"[:400])
+    con.executemany(
+        "INSERT INTO gsc_daily(page,date,clicks,impressions,position) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(page,date) DO UPDATE SET clicks=excluded.clicks, impressions=excluded.impressions, position=excluded.position",
+        [(p, d, a[0], a[1], (a[2] / a[1]) if a[1] else 0.0) for (p, d), a in acc.items()])
+    con.commit()
+    return len(acc)
+
+
+def window_stats(rows: list[dict], done: dt.date, data_end: dt.date, days: int = 28) -> dict | None:
+    """Compare n days before `done` with n days from `done` on, n = min(days, days of data after done).
+    rows: {date (ISO), clicks, impressions, position} for one page. Position is impression-weighted.
+    Returns None when there is no data after the done date yet."""
+    n = min(days, (data_end - done).days + 1)
+    if n < 1:
+        return None
+
+    def tot(a: dt.date, b: dt.date):
+        sel = [r for r in rows if a <= dt.date.fromisoformat(r["date"]) <= b]
+        imp = sum(r["impressions"] for r in sel)
+        return {"clicks": sum(r["clicks"] for r in sel), "impressions": imp,
+                "position": round(sum(r["position"] * r["impressions"] for r in sel) / imp, 1) if imp else None}
+
+    return {"days": n, "before": tot(done - dt.timedelta(days=n), done - dt.timedelta(days=1)),
+            "after": tot(done, done + dt.timedelta(days=n - 1))}
