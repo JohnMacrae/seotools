@@ -124,6 +124,7 @@ def test_line_weight_and_discontinued():
     from app.linkgraph import is_discontinued, LINE_WEIGHTS
     assert is_discontinued("/collections/mother-of-the-bride/jacques-vert/")
     assert is_discontinued("/dresses/jacques-vert-jv-ebony")
+    assert is_discontinued("/collections/bridal/sophia-tolli") and is_discontinued("/dresses/sophia-tolli-elsa-y3145")
     assert not is_discontinued("/collections/mother-of-the-bride/john-charles")
     assert not is_discontinued("/dresses/john-charles-65432")
     assert LINE_WEIGHTS["bridal"] > LINE_WEIGHTS["mob"] > LINE_WEIGHTS["bridesmaids"]
