@@ -81,3 +81,17 @@ Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.
 - The protocol and `www.` are removed from input, so a pasted URL works.
 - Ranking-change arrows compare against DataForSEO's previous absolute rank, so treat them as indicative.
 - The competitor list excludes giant sites (Amazon, Wikipedia and similar) via `exclude_top_domains`.
+
+## Monthly map pack check
+
+`/mappack` checks Google (Colchester) for every stored keyword target (primary + supporting) and records our and the
+competitor's map pack rank, rating and organic position/URL per keyword, with run history and DataForSEO spend per run.
+`POST /api/mappack/run` starts a run (`?limit=N` checks only the first N keywords); `GET /api/mappack/runs` and
+`GET /api/mappack/runs/ID` read them. Organic URLs come from `website_name`/`breadcrumb` because DataForSEO returns a
+Google redirect; a URL rebuilt from a truncated breadcrumb is approximate (the domain is always right).
+
+Monthly schedule (host crontab, 06:00 on the 1st; not installed by default):
+
+```
+0 6 1 * * curl -fsS -X POST http://localhost:8095/api/mappack/run >/dev/null
+```

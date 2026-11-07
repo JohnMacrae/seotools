@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, gsc, health, linkgraph, pagegap, progress, targets
+from . import compare, crawl, dfs, gsc, health, linkgraph, mappack, pagegap, progress, targets
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
 TARGETS_DOC = Path(os.environ.get("TARGETS_DOC", "/docs/keyword-targets.md"))
@@ -139,13 +139,14 @@ def db() -> sqlite3.Connection:
             con.execute(f"ALTER TABLE suggestions ADD COLUMN {col} {typ}")
     gsc.ensure_tables(con)
     targets.ensure_table(con)
+    mappack.ensure_tables(con)
     return con
 
 
 @app.on_event("startup")
 def _mark_interrupted():
     with closing(db()) as con:
-        for table in ("crawls", "plans", "gaps"):
+        for table in ("crawls", "plans", "gaps", "mappack_runs"):
             con.execute(
                 f"UPDATE {table} SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
                 (dt.datetime.utcnow().isoformat(timespec="seconds"),),
@@ -722,3 +723,41 @@ def targets_delete(tid: int):
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "mock": dfs.MOCK, "credentials": bool(dfs.LOGIN and dfs.PASSWORD)}
+
+
+@app.get("/mappack")
+def mappack_page():
+    return FileResponse(STATIC / "mappack.html")
+
+
+@app.post("/api/mappack/run")
+async def mappack_start(limit: int | None = Query(None, ge=1)):
+    """Start a Map pack check of every stored target keyword (limit: first N keywords, for spot checks)."""
+    with closing(db()) as con:
+        if con.execute("SELECT 1 FROM mappack_runs WHERE status='running'").fetchone():
+            raise HTTPException(409, "A map pack check is already running")
+        kws = mappack.keyword_list(targets.list_all(con))
+        if limit:
+            kws = kws[:limit]
+        if not kws:
+            raise HTTPException(400, "No keyword targets stored; seed them first (POST /api/targets/seed)")
+        run_id = mappack.create_run(con, _now(), len(kws))
+    task = asyncio.create_task(mappack.execute(db, run_id, kws, _now))
+    _crawl_tasks.add(task)
+    task.add_done_callback(_crawl_tasks.discard)
+    return {"id": run_id, "keywords": len(kws)}
+
+
+@app.get("/api/mappack/runs")
+def mappack_runs():
+    with closing(db()) as con:
+        return mappack.list_runs(con)
+
+
+@app.get("/api/mappack/runs/{run_id}")
+def mappack_run(run_id: int):
+    with closing(db()) as con:
+        r = mappack.get_run(con, run_id)
+    if not r:
+        raise HTTPException(404, "No such run")
+    return r

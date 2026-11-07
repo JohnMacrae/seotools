@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map pack check</title>
+<style>
+  :root { --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; overflow-x: auto; }
+  input, button, textarea { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: #fff; color: var(--ink); }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+  button.del { background: #fff; color: var(--bad); border-color: var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  td input, td textarea { width: 100%; } td textarea { height: 64px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .err { background: #fdeaea; color: #8a1f1f; border: 1px solid #f3c2c2; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  code { background: #eef0f4; padding: 0 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="targets">Keyword targets</a><a href="mappack" class="on">Map pack</a></nav></div>
+</header>
+<main>
+  <div id="err"></div>
+  <div class="card">
+    <div class="bar">
+      <button id="run">Run check now</button>
+      <label class="sub">Spot check first <input id="lim" type="number" min="1" style="width:70px" placeholder="all"> keywords</label>
+      <span class="sub" id="msg">Google SERP from Colchester for every stored target keyword. Monthly run: see README.</span>
+    </div>
+    <div id="sum"></div>
+  </div>
+  <div class="card"><h3 style="margin-top:0">Keywords</h3><div class="bar"><label class="sub"><input type="checkbox" id="only"> pack present only</label></div><table id="res"></table></div>
+  <div class="card"><h3 style="margin-top:0">Run history</h3><table id="hist"></table></div>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const dash = v => v == null ? "<span class=sub>-</span>" : esc(v);
+let runs = [], cur = null, timer = null;
+async function api(method, url) {
+  const r = await fetch(url, {method});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  return d;
+}
+const wrap = fn => async (...a) => { try { document.getElementById("err").innerHTML = ""; await fn(...a); } catch (e) { document.getElementById("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
+const money = v => "$" + (v || 0).toFixed(3);
+const avg = v => v == null ? "-" : v.toFixed(1);
+
+async function loadRuns(select) {
+  runs = await api("GET", "api/mappack/runs");
+  renderHist();
+  const id = select ?? (cur && cur.id) ?? (runs.find(r => r.status !== "running") || runs[0] || {}).id;
+  if (id) await show(id); else document.getElementById("sum").innerHTML = '<span class="sub">No runs yet.</span>';
+}
+async function show(id) {
+  cur = await api("GET", "api/mappack/runs/" + id);
+  const s = cur.summary;
+  document.getElementById("sum").innerHTML = `<div class="sub">Run #${cur.id} - ${esc(cur.started_at)} - ${esc(cur.status)} (${cur.done}/${cur.keywords}) - spend ${money(cur.cost)}${cur.error ? " - " + esc(cur.error) : ""}</div>
+    <table><tr><th>Keywords</th><th>Pack present</th><th>Us in pack</th><th>Them in pack</th><th>Avg pack rank us</th><th>Avg pack rank them</th><th>Wins / win set</th></tr>
+    <tr><td>${s.keywords}</td><td>${s.pack_present}</td><td>${s.us_in_pack}</td><td>${s.them_in_pack}</td><td>${avg(s.us_avg_pack_rank)}</td><td>${avg(s.them_avg_pack_rank)}</td><td>${s.wins} / ${s.win_set}</td></tr></table>`;
+  renderRes();
+  clearTimeout(timer);
+  if (cur.status === "running") timer = setTimeout(wrap(() => show(id)), 3000);
+  else if (runs.length && runs.some(r => r.status === "running")) timer = setTimeout(wrap(() => loadRuns(id)), 3000);
+}
+const link = (u, p) => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">#${esc(p)}</a>` : "<span class=sub>-</span>";
+const rate = (r, n) => r == null ? "" : ` <span class=sub>${r}* (${n})</span>`;
+function renderRes() {
+  const only = document.getElementById("only").checked;
+  const rows = cur.results.filter(r => !only || r.pack_present);
+  document.getElementById("res").innerHTML = `<tr><th>Keyword</th><th>Pack</th><th>Us pack</th><th>Them pack</th><th>Us organic</th><th>Them organic</th><th>Win</th></tr>` +
+    rows.map(r => r.error ? `<tr><td>${esc(r.keyword)}</td><td colspan=6 class=sub>${esc(r.error)}</td></tr>` :
+    `<tr><td>${esc(r.keyword)}</td><td>${r.pack_present ? "yes" : "no"}</td><td>${dash(r.us_pack_rank)}${rate(r.us_rating, r.us_reviews)}</td><td>${dash(r.them_pack_rank)}${rate(r.them_rating, r.them_reviews)}</td>
+    <td>${link(r.us_org_url, r.us_org_pos)}</td><td>${link(r.them_org_url, r.them_org_pos)}</td><td>${r.win_set ? (r.won ? "win" : "<b>not yet</b>") : "<span class=sub>n/a</span>"}</td></tr>`).join("");
+}
+function renderHist() {
+  document.getElementById("hist").innerHTML = `<tr><th>Run</th><th>Started</th><th>Status</th><th>Keywords</th><th>Pack</th><th>Us in</th><th>Them in</th><th>Avg rank us / them</th><th>Wins</th><th>Spend</th></tr>` +
+    runs.map(r => { const s = r.summary; return `<tr><td><a href="#" data-id="${r.id}">#${r.id}</a></td><td>${esc(r.started_at)}</td><td>${esc(r.status)}</td><td>${r.keywords}</td><td>${s.pack_present}</td><td>${s.us_in_pack}</td><td>${s.them_in_pack}</td><td>${avg(s.us_avg_pack_rank)} / ${avg(s.them_avg_pack_rank)}</td><td>${s.wins}/${s.win_set}</td><td>${money(r.cost)}</td></tr>`; }).join("");
+}
+document.getElementById("hist").onclick = wrap(async e => { const id = e.target.dataset && e.target.dataset.id; if (id) { e.preventDefault(); await show(id); } });
+document.getElementById("only").onchange = () => cur && renderRes();
+document.getElementById("run").onclick = wrap(async () => {
+  const lim = document.getElementById("lim").value;
+  const r = await api("POST", "api/mappack/run" + (lim ? "?limit=" + lim : ""));
+  await loadRuns(r.id);
+});
+wrap(loadRuns)();
+</script>
+</body>
+</html>
