@@ -2,7 +2,8 @@
 
 The model only proposes; every rule that keeps the plan non-spammy is enforced here:
 per-source / per-target caps, line quotas, one cross-line link per source, anchors that
-must really appear in the source text (or in a new sentence), and an exact-match anchor cap.
+must really appear in the source text (or in a new sentence), and no anchor repeated within one source page. Anchors for keyword-target pages come from the
+target store, not the model.
 """
 from __future__ import annotations
 
@@ -22,7 +23,6 @@ MAX_TARGETS = int(os.environ.get("PLAN_MAX_TARGETS", "30"))
 PER_SOURCE = 3          # new contextual links per source page per plan
 PER_TARGET = 8          # new inlinks per target per plan
 CROSS_LINE_PER_SOURCE = 1
-EXACT_SHARE = 0.3       # max share of a target's new anchors that are exact-match
 LINE_MIN = 3            # minimum suggestions per line that has candidates
 MIN_TEXT = 200          # chars of main-content text a source needs
 SOURCE_TEXT_CHARS = 8000
@@ -364,6 +364,7 @@ For each target return an object:
   "alt_anchor": "<a different, less keyword-heavy anchor that also appears in the same text or sentence>"}}
 Set "skip": true (with "why") when there is no natural way to link this target from this page.
 Prefer existing phrases. Vary anchors; don't just repeat the target's search query.
+Where a target lists "anchor must be one of", use exactly one of those phrases as the anchor and never invent another.
 Reply: {{"links": [ ... ]}}"""
 
 
@@ -416,65 +417,121 @@ def validate(link: dict, text: str, target: dict) -> dict | None:
     return None
 
 
-async def anchors_for(client, src: str, page: dict, items: list[dict], S: dict, sem) -> tuple[list[dict], float, list[str]]:
+def _key(a: str) -> str:
+    return re.sub(r"\s+", " ", a.lower()).strip()
+
+
+def _designer(page: dict) -> str:
+    n = re.sub(r"\s+wedding dresses.*$", "", short_name(page), flags=re.I).strip()
+    return n or path(page["url"]).rsplit("/", 1)[-1].replace("-", " ").title()
+
+
+def target_keywords(row: dict, page: dict, template: bool = False) -> list[str]:
+    """Primary first, then supporting; {Designer} expands to the page's designer name.
+    A template row applied to a page other than its example keeps only the primary (supporting is example-specific)."""
+    kws = [row["primary_keyword"]] + ([] if template else list(row.get("supporting") or []))
+    out, seen = [], set()
+    for k in kws:
+        k = k.replace("{Designer}", _designer(page)).strip()
+        if k and _key(k) not in seen:
+            seen.add(_key(k))
+            out.append(k)
+    return out
+
+
+def target_map(rows: list[dict], S: dict, ranges: set) -> dict[str, list[str]]:
+    """dst URL -> keywords, matching target paths to site URLs via path(). A row whose primary contains {Designer}
+    is the designer template: it also covers every designer range page (same line) without a target of its own."""
+    by_path = {}
+    for r in rows or []:
+        by_path.setdefault(path(r["path"]).rstrip("/") or "/", r)
+    out = {}
+    for u, page in S.items():
+        r = by_path.get(path(u).rstrip("/") or "/")
+        if r:
+            out[u] = target_keywords(r, page)
+    for r in (rows or []):
+        if "{Designer}" not in r["primary_keyword"]:
+            continue
+        for u in ranges:
+            if u in S and u not in out and S[u].get("line") == r.get("product_line"):
+                out[u] = target_keywords(r, S[u], template=True)
+    return out
+
+
+def _target_anchor(kws: list[str], text: str, used: set, usage: Counter, dst: str, choice: dict | None) -> dict | None:
+    """Pick the anchor for a target page from its keywords: least used across sources first, primary first on ties.
+    The model's choice is honoured only if it is one of the keywords, unused here and valid in the text."""
+    order = sorted((k for k in kws if _key(k) not in used), key=lambda k: (usage[(dst, _key(k))], kws.index(k)))
+    if not order:
+        return None
+    if choice:
+        v = validate(choice, text, {})
+        if v and _key(v["anchor"]) in {_key(k) for k in order}:
+            return v
+    k = order[0]
+    span = _find(text, k)
+    if span:
+        return {"anchor": text[span[0]:span[1]], "in_text": True, "sentence": None,
+                "context": _context(text, span), "alt_anchor": None}
+    return {"anchor": k, "in_text": False, "sentence": f"Browse our {k}.", "context": None, "alt_anchor": None}
+
+
+async def anchors_for(client, src: str, page: dict, items: list[dict], S: dict, sem,
+                      tmap: dict | None = None, usage: Counter | None = None) -> tuple[list[dict], float, list[str]]:
+    tmap = tmap or {}
+    usage = usage if usage is not None else Counter()
     text = (page.get("text") or "")[:SOURCE_TEXT_CHARS]
-    if not llm.configured():
-        out = []
-        for c in items:
-            a = _fallback_anchor(text, S[c["dst"]])
-            span = _find(text, a["anchor"]) if a["in_text"] else None
-            out.append({**c, **a, "context": _context(text, span) if span else None})
-        return out, 0.0, []
-    tl = "\n".join(
-        f"- {c['dst']} | {short_name(S[c['dst']])} | line: {S[c['dst']]['line']} | searches: "
-        f"{', '.join(q['query'] for q in S[c['dst']].get('top_queries', [])[:3]) or 'n/a'}"
-        f"{' | last stock: ready to wear, still for sale' if S[c['dst']].get('discontinued') else ''}"
-        for c in items)
-    async with sem:
-        data, cost = await llm.ask_json(client, ANCHOR_SYSTEM, ANCHOR_USER.format(
-            src=src, title=page.get("title") or "", text=text, targets=tl), max_tokens=4000)
-    got = {norm(l.get("dst") or ""): l for l in (data or {}).get("links", []) if isinstance(l, dict)}
-    out, warn = [], []
-    for c in items:
+    got, cost = {}, 0.0
+    if llm.configured():
+        tl = "\n".join(
+            f"- {c['dst']} | {short_name(S[c['dst']])} | line: {S[c['dst']]['line']} | searches: "
+            f"{', '.join(q['query'] for q in S[c['dst']].get('top_queries', [])[:3]) or 'n/a'}"
+            f"{' | last stock: ready to wear, still for sale' if S[c['dst']].get('discontinued') else ''}"
+            f"{' | anchor must be one of: ' + '; '.join(tmap[c['dst']]) if c['dst'] in tmap else ''}"
+            for c in items)
+        async with sem:
+            data, cost = await llm.ask_json(client, ANCHOR_SYSTEM, ANCHOR_USER.format(
+                src=src, title=page.get("title") or "", text=text, targets=tl), max_tokens=4000)
+        got = {norm(l.get("dst") or ""): l for l in (data or {}).get("links", []) if isinstance(l, dict)}
+    out, warn, used = [], [], set()
+    for c in sorted(items, key=lambda c: -c["score"]):
         l = got.get(c["dst"])
-        v = validate(l, text, S[c["dst"]]) if l else None
-        if v:
-            out.append({**c, **v})
-        elif l and l.get("skip"):
-            warn.append(f"model skipped {path(c['src'])} → {path(c['dst'])}: {str(l.get('why') or '')[:100]}")
-        else:
-            warn.append(f"dropped {path(c['src'])} → {path(c['dst'])}: anchor not found in text or sentence")
-    return out, cost, warn
-
-
-def cap_exact(links: list[dict], S: dict) -> tuple[list[dict], list[str]]:
-    """At most EXACT_SHARE of a target's new anchors may be exact-match; swap to alt_anchor or drop."""
-    keep, warn = [], []
-    by_dst = defaultdict(list)
-    for l in links:
-        l["anchor_type"] = anchor_type(l["anchor"], S[l["dst"]])
-        by_dst[l["dst"]].append(l)
-    for dst, ls in by_dst.items():
-        limit = max(1, math.floor(len(ls) * EXACT_SHARE))
-        n = 0
-        for l in sorted(ls, key=lambda l: -l["score"]):
-            if l["anchor_type"] != "exact" or n < limit:
-                n += l["anchor_type"] == "exact"
-                keep.append(l)
+        if c["dst"] in tmap:
+            v = _target_anchor(tmap[c["dst"]], text, used, usage, c["dst"], l)
+            if not v:
+                warn.append(f"dropped {path(c['src'])} → {path(c['dst'])}: every target keyword already used as an anchor on this page")
                 continue
-            alt = (l.get("alt_anchor") or "").strip()
-            hay = l.get("context") or l.get("sentence") or ""
-            if alt and _find(hay, alt) and anchor_type(alt, S[dst]) != "exact":
-                l["anchor"], l["anchor_type"] = alt, anchor_type(alt, S[dst])
-                keep.append(l)
-            else:
-                warn.append(f"dropped {path(l['src'])} → {path(dst)}: too many exact-match anchors to this page")
-    return keep, warn
+        elif llm.configured():
+            v = validate(l, text, S[c["dst"]]) if l else None
+            if v and _key(v["anchor"]) in used:
+                alt = (l.get("alt_anchor") or "").strip()
+                hay = v.get("context") or v.get("sentence") or ""
+                v = {**v, "anchor": alt} if alt and _key(alt) not in used and _find(hay, alt) else None
+            if not v:
+                if l and l.get("skip"):
+                    warn.append(f"model skipped {path(c['src'])} → {path(c['dst'])}: {str(l.get('why') or '')[:100]}")
+                else:
+                    warn.append(f"dropped {path(c['src'])} → {path(c['dst'])}: anchor not found in text or sentence")
+                continue
+        else:
+            v = _fallback_anchor(text, S[c["dst"]])
+            span = _find(text, v["anchor"]) if v["in_text"] else None
+            v["context"] = _context(text, span) if span else None
+            if _key(v["anchor"]) in used:
+                warn.append(f"dropped {path(c['src'])} → {path(c['dst'])}: anchor already used on this page")
+                continue
+        used.add(_key(v["anchor"]))
+        if c["dst"] in tmap:
+            usage[(c["dst"], _key(v["anchor"]))] += 1
+        out.append({**c, **v, "anchor_type": anchor_type(v["anchor"], S[c["dst"]])})
+    return out, cost, warn
 
 
 # ---------------------------------------------------------------- entry point
 
-async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, progress=None) -> dict:
+async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, progress=None,
+                     targets: list[dict] | None = None) -> dict:
     say = progress or (lambda m: None)
     S = {norm(p["url"]): {**p, "url": norm(p["url"])} for p in strength["pages"]}
     P = {norm(p["url"]): p for p in pages if linkgraph.is_html_ok(p)}
@@ -513,10 +570,12 @@ async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, pr
 
         say(f"Writing anchors for {len(chosen)} links on {len(by_src)} pages")
         sem = asyncio.Semaphore(CONCURRENCY)
+        tmap = target_map(targets or [], S, ranges)
+        usage: Counter = Counter()
 
         async def one(src, items):
             try:
-                return await anchors_for(client, src, P[src], items, S, sem)
+                return await anchors_for(client, src, P[src], items, S, sem, tmap, usage)
             except (llm.LLMError, httpx.HTTPError) as e:
                 return [], 0.0, [f"anchors failed for {path(src)}: {e}"]
 
@@ -526,8 +585,6 @@ async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, pr
         linked += ls
         cost += c_
         warnings += w
-    linked, w = cap_exact(linked, S)
-    warnings += w
 
     suggestions = [{
         "src": l["src"], "dst": l["dst"], "anchor": l["anchor"], "anchor_type": l["anchor_type"],

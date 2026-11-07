@@ -433,7 +433,8 @@ async def _run_plan(plan_id: int, crawl_id: int):
 
         with closing(db()) as con:
             _row, pages, links, strength, _info = _strength(con, crawl_id, with_text=True)
-        plan = await linkplan.build_plan(pages, links, strength, progress=set_progress)
+            tg = targets.list_all(con)
+        plan = await linkplan.build_plan(pages, links, strength, progress=set_progress, targets=tg)
         with closing(db()) as con:
             con.execute(
                 "UPDATE plans SET status='done', finished_at=?, progress=NULL, model=?, cost=?, data=? WHERE id=?",

@@ -28,7 +28,7 @@ def test_plan_lifecycle(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "DB_PATH", tmp_path / "t.db")
     seen = []
 
-    async def build_plan(pages, links, strength, *, progress=None):
+    async def build_plan(pages, links, strength, *, progress=None, targets=None):
         seen.append(("text" in pages[0], strength is not None))
         progress("working")
         return PLAN
