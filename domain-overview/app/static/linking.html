@@ -54,6 +54,12 @@
   .chips small { display: block; opacity: .75; font-size: 11px; }
   tr.row { cursor: pointer; } tr.row:hover { background: #f5f8ff; }
   tr.more td { background: #fafbfd; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; background: #eef0f4; color: var(--muted); white-space: nowrap; }
+  .badge.pass { background: #e1f5e9; color: var(--good); } .badge.fail { background: #fdeaea; color: var(--bad); } .badge.partial, .badge.temp { background: #fdf0e3; color: var(--warn); }
+  .todo { display: grid; grid-template-columns: minmax(160px, 1fr) 3fr; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--line); }
+  mark { background: #fff1a8; padding: 0 2px; }
+  .planbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .small { padding: 3px 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -105,8 +111,8 @@ async function watch(id) {
 
 let cur = null;
 function renderCrawl(c, h) {
-  cur = { c, h, strength: null, tab: new URLSearchParams(location.search).get("tab") || "Health" };
-  $("#app").innerHTML = `<div class="tabs">${TABS.map(t => `<button data-tab="${t}" ${["Health", "Strength"].includes(t) ? "" : "disabled title=\"Coming later\""}>${t}</button>`).join("")}</div>
+  cur = { c, h, strength: null, plans: [], plan: null, planId: null, line: "all", tab: new URLSearchParams(location.search).get("tab") || "Health" };
+  $("#app").innerHTML = `<div class="tabs">${TABS.map(t => `<button data-tab="${t}" ${["Health", "Strength", "Topic map", "Template rules", "Link to-dos"].includes(t) ? "" : "disabled title=\"Coming later\""}>${t}</button>`).join("")}</div>
     <div class="sub" style="margin-bottom:12px">Crawl #${c.id} of ${esc(c.domain)} · ${esc(c.started_at.replace("T", " "))} · <a href="linking">all crawls</a></div>
     <div id="tab"></div>`;
   showTab(cur.tab);
@@ -115,7 +121,9 @@ function renderCrawl(c, h) {
 async function showTab(t) {
   cur.tab = t;
   document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  clearInterval(planTimer);
   if (t === "Health") { $("#tab").innerHTML = healthTab(cur.h); return; }
+  if (PLAN_TABS.includes(t)) { await loadPlans(); return; }
   if (!cur.strength) {
     $("#tab").innerHTML = `<div class="sub">Loading Search Console data and link strength…</div>`;
     const r = await fetch(`api/crawl/${cur.c.id}/strength`);
@@ -181,6 +189,132 @@ document.addEventListener("click", e => {
   document.querySelector(".card .scroll").scrollTop = top;
 });
 document.addEventListener("click", e => { const b = e.target.closest(".tabs button[data-tab]"); if (b && !b.disabled && cur) showTab(b.dataset.tab); });
+
+// ---- Link plan tabs ----
+const PLAN_TABS = ["Topic map", "Template rules", "Link to-dos"];
+let planTimer = null;
+const fromUrl = () => new URLSearchParams(location.search).get("plan");
+
+async function loadPlans(pickId) {
+  const plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(r => r.ok ? r.json() : []);
+  cur.plans = plans;
+  const want = pickId ?? cur.planId ?? fromUrl();
+  const sel = plans.find(p => String(p.id) === String(want)) || plans.find(p => p.status === "done") || plans[0];
+  if (!sel) { cur.plan = null; cur.planId = null; renderPlanTab(); return; }
+  cur.planId = sel.id;
+  await pollPlan();
+}
+
+async function pollPlan() {
+  clearInterval(planTimer);
+  const tick = async () => {
+    const r = await fetch("api/plan/" + cur.planId);
+    if (!r.ok) { clearInterval(planTimer); return; }
+    cur.plan = await r.json();
+    if (cur.plan.status !== "running") { clearInterval(planTimer); cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json()); }
+    if (PLAN_TABS.includes(cur.tab)) renderPlanTab();
+    return cur.plan.status;
+  };
+  if ((await tick()) === "running") planTimer = setInterval(tick, 2000);
+}
+
+async function buildPlan() {
+  const r = await fetch(`api/crawl/${cur.c.id}/plan`, { method: "POST" });
+  const d = await r.json();
+  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); return; }
+  cur.planId = d.id; cur.line = "all";
+  cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json());
+  pollPlan();
+}
+
+function planHeader() {
+  const p = cur.plan, running = p && p.status === "running";
+  const picker = cur.plans.length > 1 ? `<select id="planpick">${cur.plans.map(x => `<option value="${x.id}" ${x.id === cur.planId ? "selected" : ""}>#${x.id} · ${esc(x.created_at.replace("T", " "))} · ${esc(x.status)}</option>`).join("")}</select>` : "";
+  let h = `<div class="planbar"><button id="buildplan" ${running ? "disabled" : ""}>Build link plan</button>${picker}
+    ${running ? `<span class="sub">${esc(p.progress || "Working…")}</span>` : ""}</div>`;
+  if (!p) return h + `<div class="sub">No link plan for this crawl yet. Click "Build link plan".</div>`;
+  if (p.status === "error") return h + `<div class="err">Plan failed: ${esc(p.error)}</div>`;
+  if (running) return h;
+  const d = p.data || {};
+  h += `<div class="sub" style="margin-bottom:10px">Plan #${p.id} · model ${esc(p.model || "none")} · cost $${(p.cost || 0).toFixed(3)} · ${esc((p.finished_at || "").replace("T", " "))}</div>`;
+  if (d.llm_used === false) h += `<div class="note" style="margin:0 0 10px">Built without the model: generic anchors</div>`;
+  h += (d.warnings || []).map(w => `<div class="err">${esc(w)}</div>`).join("");
+  return h;
+}
+
+function renderPlanTab() {
+  const p = cur.plan;
+  let body = "";
+  if (p && p.status === "done" && p.data) body = cur.tab === "Topic map" ? topicsView(p.data) : cur.tab === "Template rules" ? rulesView(p.data) : todosView(p.data);
+  $("#tab").innerHTML = planHeader() + body;
+}
+
+function rulesView(d) {
+  const rules = d.template_rules || [];
+  if (!rules.length) return `<div class="sub">No template rules in this plan.</div>`;
+  return `<div class="card"><h2>Template rules</h2><table><tr><th>Rule</th><th>Status</th><th class="num">Failing / total</th><th>Fix</th></tr>
+    ${rules.map((r, i) => `<tr class="row" data-rule="${i}"><td><b>${esc(r.name)}</b><div class="sub">${esc(r.description)}</div></td>
+      <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td class="num">${fmt(r.failing)} / ${fmt(r.total)}</td><td>${esc(r.fix)}</td></tr>
+      <tr class="more" hidden><td colspan="4">${(r.examples || []).length ? `<table><tr><th>Page</th><th>Detail</th></tr>${r.examples.map(x => `<tr><td class="wrap">${link(x.url)}</td><td>${esc(x.detail)}</td></tr>`).join("")}</table>` : `<span class="sub">No examples.</span>`}</td></tr>`).join("")}</table></div>`;
+}
+
+function topicsView(d) {
+  const t = d.topics || [];
+  if (!t.length) return `<div class="sub">No topics in this plan.</div>`;
+  return t.map(x => `<div class="card"><h2>${esc(x.name)} <small class="sub">${esc(LINE_NAMES[x.line] || x.line)} · hub ${link(x.hub)} · ${fmt(x.members.length)} pages</small></h2>
+    <div class="wrap">${x.members.map(m => link(m)).join(" · ")}</div></div>`).join("");
+}
+
+function anchorHtml(s) {
+  const a = s.anchor || "";
+  if (s.in_text && s.context) {
+    const i = s.context.toLowerCase().indexOf(a.toLowerCase());
+    if (i >= 0) return `${esc(s.context.slice(0, i))}<mark>${esc(s.context.slice(i, i + a.length))}</mark>${esc(s.context.slice(i + a.length))}`;
+    return esc(s.context);
+  }
+  const t = s.sentence || a, i = t.toLowerCase().indexOf(a.toLowerCase());
+  return i >= 0 ? `${esc(t.slice(0, i))}<b>${esc(t.slice(i, i + a.length))}</b>${esc(t.slice(i + a.length))}` : `${esc(t)} <b>(${esc(a)})</b>`;
+}
+
+function todoGroups(d) {
+  const g = {};
+  for (const s of d.suggestions || []) if (cur.line === "all" || s.line === cur.line) (g[s.src] ||= []).push(s);
+  return Object.entries(g).map(([src, items]) => ({ src, items: items.sort((a, b) => b.priority - a.priority), sum: items.reduce((n, s) => n + s.priority, 0) })).sort((a, b) => b.sum - a.sum);
+}
+
+function todosView(d) {
+  const by = (d.stats && d.stats.by_line) || {}, total = (d.suggestions || []).length;
+  const chip = (k, name, n) => `<button data-pline="${k}" class="${cur.line === k ? "on" : ""}">${name}<small>${fmt(n)} links</small></button>`;
+  const groups = todoGroups(d);
+  return `<div class="chips">${chip("all", "All", total)}${Object.keys(LINE_NAMES).map(k => chip(k, LINE_NAMES[k], by[k] || 0)).join("")}</div>
+    ${groups.length ? groups.map((g, gi) => `<div class="card"><h2><span class="wrap">${link(g.src)} <small class="sub">${g.items.length} link${g.items.length > 1 ? "s" : ""} to add</small></span>
+      <button class="small" data-copy="${gi}">Copy</button></h2>
+      ${g.items.map(s => `<div class="todo"><div class="wrap">${link(s.dst)}<div><span class="badge">${esc(s.kind)}</span> ${s.temporary ? `<span class="badge temp" title="Last stock: remove the link when the range sells out">temporary</span>` : ""}</div></div>
+        <div><div>${anchorHtml(s)}</div><div class="sub">${esc(s.reason)}</div></div></div>`).join("")}</div>`).join("") : `<div class="sub">No link to-dos for this filter.</div>`}`;
+}
+
+function copyText(g) {
+  return g.items.map(s => `${s.dst}\nAnchor: ${s.anchor}\n${s.in_text ? "In text: " + (s.context || "") : "Add: " + (s.sentence || "")}`).join("\n\n");
+}
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (!cur || !PLAN_TABS.includes(cur.tab)) return;
+  if (t.id === "buildplan") { buildPlan(); return; }
+  const row = t.closest("tr.row[data-rule]");
+  if (row && !t.closest("a")) { row.nextElementSibling.hidden = !row.nextElementSibling.hidden; return; }
+  const chip = t.closest("button[data-pline]");
+  if (chip) { cur.line = chip.dataset.pline; renderPlanTab(); return; }
+  const cp = t.closest("button[data-copy]");
+  if (cp && cur.plan?.data) {
+    const g = todoGroups(cur.plan.data)[+cp.dataset.copy];
+    navigator.clipboard.writeText(`${g.src}\n\n${copyText(g)}`).then(() => { cp.textContent = "Copied"; setTimeout(() => cp.textContent = "Copy", 1500); });
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "planpick") { cur.planId = +e.target.value; pollPlan(); }
+});
+
 
 function tile(label, n, sub, bad) {
   return `<div class="card"><h2>${label}</h2><div class="big ${bad && n ? "bad" : ""}">${fmt(n)}</div><div class="sub">${sub}</div></div>`;

@@ -94,6 +94,32 @@ def db() -> sqlite3.Connection:
     )
     con.execute("CREATE INDEX IF NOT EXISTS ix_links_dst ON links(crawl_id, dst)")
     con.execute("CREATE INDEX IF NOT EXISTS ix_links_src ON links(crawl_id, src)")
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS plans (
+            id INTEGER PRIMARY KEY,
+            crawl_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            progress TEXT,
+            error TEXT,
+            model TEXT,
+            cost REAL,
+            data TEXT)"""
+    )
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS suggestions (
+            plan_id INTEGER NOT NULL,
+            src TEXT NOT NULL,
+            dst TEXT NOT NULL,
+            anchor TEXT,
+            kind TEXT,
+            reason TEXT,
+            temporary INTEGER,
+            status TEXT DEFAULT 'open',
+            checked_crawl_id INTEGER,
+            PRIMARY KEY(plan_id, src, dst))"""
+    )
     gsc.ensure_tables(con)
     return con
 
@@ -103,6 +129,10 @@ def _mark_interrupted():
     with closing(db()) as con:
         con.execute(
             "UPDATE crawls SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
+            (dt.datetime.utcnow().isoformat(timespec="seconds"),),
+        )
+        con.execute(
+            "UPDATE plans SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
             (dt.datetime.utcnow().isoformat(timespec="seconds"),),
         )
         con.commit()
@@ -326,10 +356,10 @@ def crawl_health(crawl_id: int):
     return {"crawl": dict(crawl_row), **health.health(pages, links)}
 
 
-def _crawl_data(con, crawl_id: int):
-    pages = [dict(r) for r in con.execute(
-        "SELECT url,status,redirect_to,content_type,canonical,meta_robots,title,h1,meta_description,"
-        "word_count,depth,in_sitemap,external_links FROM pages WHERE crawl_id=?", (crawl_id,))]
+def _crawl_data(con, crawl_id: int, with_text: bool = False):
+    cols = ("url,status,redirect_to,content_type,canonical,meta_robots,title,h1,meta_description,"
+            "word_count,depth,in_sitemap,external_links" + (",text" if with_text else ""))
+    pages = [dict(r) for r in con.execute(f"SELECT {cols} FROM pages WHERE crawl_id=?", (crawl_id,))]
     links = [dict(r) for r in con.execute(
         "SELECT src,dst,anchor,placement,nofollow FROM links WHERE crawl_id=?", (crawl_id,))]
     return pages, links
@@ -344,27 +374,104 @@ def gsc_fetch(refresh: bool = False):
             raise HTTPException(503 if not gsc.configured() else 502, str(e))
 
 
+def _strength(con, crawl_id: int, with_text: bool = False):
+    """Returns (crawl_row, pages, links, strength_dict, gsc_info)."""
+    crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl_id,)).fetchone()
+    if not crawl_row:
+        raise HTTPException(404, "Crawl not found")
+    pages, links = _crawl_data(con, crawl_id, with_text)
+    info: dict = {"configured": gsc.configured(), "fetched_at": None, "start": None, "end": None}
+    gp, gr = [], []
+    if info["configured"]:
+        fetch = gsc.latest(con)
+        try:
+            s = gsc.summary(con, fetch, True) if fetch else gsc.get_fetch(con)
+        except gsc.GSCError as e:
+            s = None
+            info["error"] = str(e)
+        if s:
+            info.update(fetched_at=s["fetched_at"], start=s["start_date"], end=s["end_date"])
+            host = urlsplit(pages[0]["url"]).hostname if pages else crawl_row["domain"]
+            gp, gr = gsc.load(con, s["fetch_id"], host)
+    return crawl_row, pages, links, linkgraph.strength(pages, links, gp, gr), info
+
+
 @app.get("/api/crawl/{crawl_id}/strength")
 def crawl_strength(crawl_id: int):
     with closing(db()) as con:
-        crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl_id,)).fetchone()
-        if not crawl_row:
+        crawl_row, _pages, _links, strength, info = _strength(con, crawl_id)
+    return {"crawl": dict(crawl_row), **strength, "gsc": info}
+
+
+def _now() -> str:
+    return dt.datetime.utcnow().isoformat(timespec="seconds")
+
+
+async def _run_plan(plan_id: int, crawl_id: int):
+    def set_progress(msg: str):
+        with closing(db()) as con:
+            con.execute("UPDATE plans SET progress=? WHERE id=?", (str(msg), plan_id))
+            con.commit()
+
+    try:
+        from . import linkplan  # lazy: module is developed separately
+
+        with closing(db()) as con:
+            _row, pages, links, strength, _info = _strength(con, crawl_id, with_text=True)
+        plan = await linkplan.build_plan(pages, links, strength, progress=set_progress)
+        with closing(db()) as con:
+            con.execute(
+                "UPDATE plans SET status='done', finished_at=?, progress=NULL, model=?, cost=?, data=? WHERE id=?",
+                (_now(), plan.get("model"), plan.get("cost"), json.dumps(plan), plan_id),
+            )
+            con.executemany(
+                "INSERT OR REPLACE INTO suggestions(plan_id,src,dst,anchor,kind,reason,temporary) VALUES (?,?,?,?,?,?,?)",
+                [(plan_id, s["src"], s["dst"], s.get("anchor"), s.get("kind"), s.get("reason"), int(bool(s.get("temporary"))))
+                 for s in plan.get("suggestions", [])],
+            )
+            con.commit()
+    except Exception as e:  # noqa: BLE001
+        with closing(db()) as con:
+            con.execute("UPDATE plans SET status='error', error=?, finished_at=? WHERE id=?",
+                        (f"{type(e).__name__}: {e}"[:500], _now(), plan_id))
+            con.commit()
+
+
+@app.post("/api/crawl/{crawl_id}/plan")
+async def start_plan(crawl_id: int):
+    with closing(db()) as con:
+        if not con.execute("SELECT 1 FROM crawls WHERE id=?", (crawl_id,)).fetchone():
             raise HTTPException(404, "Crawl not found")
-        pages, links = _crawl_data(con, crawl_id)
-        info: dict = {"configured": gsc.configured(), "fetched_at": None, "start": None, "end": None}
-        gp, gr = [], []
-        if info["configured"]:
-            fetch = gsc.latest(con)
-            try:
-                s = gsc.summary(con, fetch, True) if fetch else gsc.get_fetch(con)
-            except gsc.GSCError as e:
-                s = None
-                info["error"] = str(e)
-            if s:
-                info.update(fetched_at=s["fetched_at"], start=s["start_date"], end=s["end_date"])
-                host = urlsplit(pages[0]["url"]).hostname if pages else crawl_row["domain"]
-                gp, gr = gsc.load(con, s["fetch_id"], host)
-    return {"crawl": dict(crawl_row), **linkgraph.strength(pages, links, gp, gr), "gsc": info}
+        if con.execute("SELECT 1 FROM plans WHERE crawl_id=? AND status='running'", (crawl_id,)).fetchone():
+            raise HTTPException(409, "A link plan for this crawl is already running")
+        cur = con.execute("INSERT INTO plans(crawl_id, created_at, status, progress) VALUES (?,?,'running','Starting')",
+                          (crawl_id, _now()))
+        con.commit()
+        plan_id = cur.lastrowid
+    task = asyncio.create_task(_run_plan(plan_id, crawl_id))
+    _crawl_tasks.add(task)
+    task.add_done_callback(_crawl_tasks.discard)
+    return {"id": plan_id}
+
+
+@app.get("/api/plan/{plan_id}")
+def get_plan(plan_id: int):
+    with closing(db()) as con:
+        row = con.execute("SELECT * FROM plans WHERE id=?", (plan_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Plan not found")
+    d = dict(row)
+    d["data"] = json.loads(d["data"]) if d["data"] else None
+    return d
+
+
+@app.get("/api/crawl/{crawl_id}/plans")
+def list_plans(crawl_id: int):
+    with closing(db()) as con:
+        rows = con.execute(
+            "SELECT id,crawl_id,created_at,finished_at,status,progress,error,model,cost FROM plans "
+            "WHERE crawl_id=? ORDER BY id DESC LIMIT 30", (crawl_id,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/healthz")
