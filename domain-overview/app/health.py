@@ -4,6 +4,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from urllib.parse import urlsplit
 
+from .linkgraph import contextual_links
+
 CAP = 500
 
 
@@ -29,14 +31,13 @@ def health(pages: list[dict], links: list[dict]) -> dict:
 
     inlinks: Counter = Counter()
     contextual: Counter = Counter()
-    outlinks: Counter = Counter()  # internal outlinks in main/body
+    outlinks: Counter = Counter()  # contextual internal outlinks
     for l in links:
-        if l["src"] == l["dst"]:
-            continue
-        inlinks[l["dst"]] += 1
-        if l["placement"] in ("main", "body"):
-            contextual[l["dst"]] += 1
-            outlinks[l["src"]] += 1
+        if l["src"] != l["dst"]:
+            inlinks[l["dst"]] += 1
+    for l in contextual_links(pages, links):  # excludes sitewide and nav/header/footer links
+        contextual[l["dst"]] += 1
+        outlinks[l["src"]] += 1
 
     def row(p, **extra):
         return {"url": p["url"], "title": p["title"], **extra}

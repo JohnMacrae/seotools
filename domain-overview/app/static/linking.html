@@ -48,6 +48,12 @@
   .bad { color: var(--bad); } .good { color: var(--good); }
   details { margin-bottom: 12px; } summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
   summary .sub { display: inline; margin-left: 8px; font-weight: 400; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chips button { background: #fff; color: var(--ink); border-color: var(--line); text-align: left; padding: 6px 12px; }
+  .chips button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .chips small { display: block; opacity: .75; font-size: 11px; }
+  tr.row { cursor: pointer; } tr.row:hover { background: #f5f8ff; }
+  tr.more td { background: #fafbfd; }
 </style>
 </head>
 <body>
@@ -97,12 +103,84 @@ async function watch(id) {
   timer = setInterval(tick, 2000);
 }
 
+let cur = null;
 function renderCrawl(c, h) {
-  $("#app").innerHTML = `<div class="tabs">${TABS.map((t, i) => `<button ${i ? "disabled title=\"Coming later\"" : 'class="on"'}>${t}</button>`).join("")}</div>
+  cur = { c, h, strength: null, tab: new URLSearchParams(location.search).get("tab") || "Health" };
+  $("#app").innerHTML = `<div class="tabs">${TABS.map(t => `<button data-tab="${t}" ${["Health", "Strength"].includes(t) ? "" : "disabled title=\"Coming later\""}>${t}</button>`).join("")}</div>
     <div class="sub" style="margin-bottom:12px">Crawl #${c.id} of ${esc(c.domain)} · ${esc(c.started_at.replace("T", " "))} · <a href="linking">all crawls</a></div>
     <div id="tab"></div>`;
-  $("#tab").innerHTML = healthTab(h);
+  showTab(cur.tab);
 }
+
+async function showTab(t) {
+  cur.tab = t;
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  if (t === "Health") { $("#tab").innerHTML = healthTab(cur.h); return; }
+  if (!cur.strength) {
+    $("#tab").innerHTML = `<div class="sub">Loading Search Console data and link strength…</div>`;
+    const r = await fetch(`api/crawl/${cur.c.id}/strength`);
+    if (!r.ok) { $("#tab").innerHTML = `<div class="err">${esc((await r.json()).detail || r.statusText)}</div>`; return; }
+    cur.strength = await r.json();
+    cur.line = "all"; cur.sort = { key: "opportunity", dir: -1 };
+  }
+  if (cur.tab === "Strength") $("#tab").innerHTML = strengthTab(cur.strength);
+}
+
+const LINE_NAMES = { bridal: "Bridal", bridesmaids: "Bridesmaids", mob: "MOB", accessories: "Accessories", general: "General" };
+const COLS = [["path", "Page", 0], ["line", "Line", 0], ["pagerank", "PR", 1], ["contextual_inlinks", "Contextual inlinks", 1],
+  ["boilerplate_inlinks", "Boilerplate inlinks", 1], ["clicks", "Clicks", 1], ["impressions", "Impressions", 1],
+  ["position", "Avg position", 1], ["top", "Top query", 0], ["opportunity", "Opportunity", 1]];
+
+function strengthTab(s) {
+  const g = s.gsc;
+  const all = Object.values(s.lines).reduce((a, l) => ({ pages: a.pages + l.pages, impressions: a.impressions + l.impressions, clicks: a.clicks + l.clicks }), { pages: 0, impressions: 0, clicks: 0 });
+  const chip = (k, name, t) => `<button data-line="${k}" class="${cur.line === k ? "on" : ""}">${name}<small>${fmt(t.pages)} pages · ${fmt(t.impressions)} impr · ${fmt(t.clicks)} clicks</small></button>`;
+  return `${g.configured ? "" : `<div class="err">Search Console not configured. Link metrics are shown without clicks, impressions or opportunity.</div>`}
+    ${g.error ? `<div class="err">Search Console: ${esc(g.error)}</div>` : ""}
+    ${g.fetched_at ? `<div class="sub" style="margin-bottom:10px">Search Console ${esc(g.start)} to ${esc(g.end)} · fetched ${esc(g.fetched_at.replace("T", " "))} UTC</div>` : ""}
+    <div class="chips">${chip("all", "All", all)}${Object.keys(LINE_NAMES).map(k => chip(k, LINE_NAMES[k], s.lines[k])).join("")}</div>
+    <div class="card"><h2>Pages <small class="sub">PR is a 0-100 log scale. Opportunity = extra clicks if queries at positions 4-30 reached position 3, divided by (1 + PR/10). Click a row for its top queries.</small></h2>
+      <div class="scroll" style="max-height:640px">${pagesTable(s)}</div></div>
+    <div class="card"><h2>Wrong page ranking <small class="sub">${fmt(s.wrong_page.length)} queries</small></h2>
+      ${s.wrong_page.length ? `<div class="scroll"><table class="sortable"><tr><th>Query</th><th>Ranking page</th><th>Its line</th><th class="num">Impressions</th><th class="num">Position</th><th>Better page</th></tr>
+      ${s.wrong_page.map(w => `<tr><td>${esc(w.query)}</td><td class="wrap">${link(w.page)}</td><td>${esc(LINE_NAMES[w.page_line])}</td><td class="num">${fmt(w.impressions)}</td><td class="num">${w.position}</td><td class="wrap">${link(w.suggested)}</td></tr>`).join("")}</table></div>` : `<div class="sub good">None.</div>`}</div>
+    <div class="card"><h2>Old URLs still in Google (redirect candidates) <small class="sub">${fmt(s.gsc_unmatched.length)} URLs not a 200 page in this crawl</small></h2>
+      ${s.gsc_unmatched.length ? `<div class="scroll"><table class="sortable"><tr><th>URL</th><th class="num">Impressions</th><th class="num">Clicks</th><th class="num">Position</th><th class="num">Crawl status</th></tr>
+      ${s.gsc_unmatched.map(u => `<tr><td class="wrap">${link(u.page)}</td><td class="num">${fmt(u.impressions)}</td><td class="num">${fmt(u.clicks)}</td><td class="num">${u.position}</td><td class="num">${u.status ?? "not crawled"}</td></tr>`).join("")}</table></div>` : `<div class="sub good">None.</div>`}</div>`;
+}
+
+function pagesTable(s) {
+  const { key, dir } = cur.sort;
+  const val = (r, k) => k === "path" ? path(r.url) : k === "top" ? (r.top_queries[0]?.query ?? "") : r[k];
+  const rows = s.pages.filter(r => cur.line === "all" || r.line === cur.line).sort((a, b) => {
+    const x = val(a, key), y = val(b, key);
+    if (x == null || x === "") return 1;
+    if (y == null || y === "") return -1;
+    return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * dir;
+  }).slice(0, 500);
+  return `<table><tr>${COLS.map(([k, n, num]) => `<th data-sort="${k}" ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
+    ${rows.map((r, i) => `<tr class="row" data-i="${i}"><td class="wrap">${link(r.url)}</td><td>${esc(LINE_NAMES[r.line])}</td><td class="num">${r.indexable ? r.pagerank.toFixed(1) : "—"}</td>
+      <td class="num">${fmt(r.contextual_inlinks)}</td><td class="num">${fmt(r.boilerplate_inlinks)}</td><td class="num">${fmt(r.clicks)}</td><td class="num">${fmt(r.impressions)}</td>
+      <td class="num">${r.position ?? "—"}</td><td>${esc(r.top_queries[0]?.query ?? "")}</td><td class="num">${r.opportunity ? r.opportunity.toFixed(1) : "—"}</td></tr>
+      <tr class="more" hidden><td colspan="10">${r.top_queries.length ? `<table><tr><th>Query</th><th class="num">Impressions</th><th class="num">Clicks</th><th class="num">Position</th></tr>
+        ${r.top_queries.map(q => `<tr><td>${esc(q.query)}</td><td class="num">${fmt(q.impressions)}</td><td class="num">${fmt(q.clicks)}</td><td class="num">${q.position}</td></tr>`).join("")}</table>` : `<span class="sub">No Search Console queries.</span>`}
+        ${r.rank_in_line ? `<div class="sub">Opportunity rank in ${esc(LINE_NAMES[r.line])}: #${r.rank_in_line}</div>` : ""}</td></tr>`).join("")}</table>
+    ${s.pages.length > 500 ? `<div class="note">Showing the top 500 of the current filter.</div>` : ""}`;
+}
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (!cur?.strength || cur.tab !== "Strength") return;
+  const chip = t.closest(".chips button"), th = t.closest("th[data-sort]"), row = t.closest("tr.row");
+  if (chip) cur.line = chip.dataset.line;
+  else if (th) { const k = th.dataset.sort; cur.sort = { key: k, dir: cur.sort.key === k ? -cur.sort.dir : (["path", "line", "top"].includes(k) ? 1 : -1) }; }
+  else if (row && !t.closest("a")) { row.nextElementSibling.hidden = !row.nextElementSibling.hidden; return; }
+  else return;
+  const sc = document.querySelector(".card .scroll"); const top = sc?.scrollTop || 0;
+  $("#tab").innerHTML = strengthTab(cur.strength);
+  document.querySelector(".card .scroll").scrollTop = top;
+});
+document.addEventListener("click", e => { const b = e.target.closest(".tabs button[data-tab]"); if (b && !b.disabled && cur) showTab(b.dataset.tab); });
 
 function tile(label, n, sub, bad) {
   return `<div class="card"><h2>${label}</h2><div class="big ${bad && n ? "bad" : ""}">${fmt(n)}</div><div class="sub">${sub}</div></div>`;

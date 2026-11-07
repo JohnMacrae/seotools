@@ -8,3 +8,4 @@ services:
       - "8095:8000"
     volumes:
       - ./data:/data
+      - /volume1/docker/serenity/sweb-live/data/bl/ga4-service-account.json:/secrets/gsc-key.json:ro

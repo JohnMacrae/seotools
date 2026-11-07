@@ -9,12 +9,13 @@ import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, health
+from . import compare, crawl, dfs, gsc, health, linkgraph
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
 CACHE_DAYS = int(os.environ.get("CACHE_DAYS", "7"))
@@ -93,6 +94,7 @@ def db() -> sqlite3.Connection:
     )
     con.execute("CREATE INDEX IF NOT EXISTS ix_links_dst ON links(crawl_id, dst)")
     con.execute("CREATE INDEX IF NOT EXISTS ix_links_src ON links(crawl_id, src)")
+    gsc.ensure_tables(con)
     return con
 
 
@@ -320,12 +322,49 @@ def crawl_health(crawl_id: int):
         crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl_id,)).fetchone()
         if not crawl_row:
             raise HTTPException(404, "Crawl not found")
-        pages = [dict(r) for r in con.execute(
-            "SELECT url,status,redirect_to,content_type,canonical,meta_robots,title,h1,meta_description,"
-            "word_count,depth,in_sitemap,external_links FROM pages WHERE crawl_id=?", (crawl_id,))]
-        links = [dict(r) for r in con.execute(
-            "SELECT src,dst,anchor,placement,nofollow FROM links WHERE crawl_id=?", (crawl_id,))]
+        pages, links = _crawl_data(con, crawl_id)
     return {"crawl": dict(crawl_row), **health.health(pages, links)}
+
+
+def _crawl_data(con, crawl_id: int):
+    pages = [dict(r) for r in con.execute(
+        "SELECT url,status,redirect_to,content_type,canonical,meta_robots,title,h1,meta_description,"
+        "word_count,depth,in_sitemap,external_links FROM pages WHERE crawl_id=?", (crawl_id,))]
+    links = [dict(r) for r in con.execute(
+        "SELECT src,dst,anchor,placement,nofollow FROM links WHERE crawl_id=?", (crawl_id,))]
+    return pages, links
+
+
+@app.get("/api/gsc/fetch")
+def gsc_fetch(refresh: bool = False):
+    with closing(db()) as con:
+        try:
+            return gsc.get_fetch(con, refresh)
+        except gsc.GSCError as e:
+            raise HTTPException(503 if not gsc.configured() else 502, str(e))
+
+
+@app.get("/api/crawl/{crawl_id}/strength")
+def crawl_strength(crawl_id: int):
+    with closing(db()) as con:
+        crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl_id,)).fetchone()
+        if not crawl_row:
+            raise HTTPException(404, "Crawl not found")
+        pages, links = _crawl_data(con, crawl_id)
+        info: dict = {"configured": gsc.configured(), "fetched_at": None, "start": None, "end": None}
+        gp, gr = [], []
+        if info["configured"]:
+            fetch = gsc.latest(con)
+            try:
+                s = gsc.summary(con, fetch, True) if fetch else gsc.get_fetch(con)
+            except gsc.GSCError as e:
+                s = None
+                info["error"] = str(e)
+            if s:
+                info.update(fetched_at=s["fetched_at"], start=s["start_date"], end=s["end_date"])
+                host = urlsplit(pages[0]["url"]).hostname if pages else crawl_row["domain"]
+                gp, gr = gsc.load(con, s["fetch_id"], host)
+    return {"crawl": dict(crawl_row), **linkgraph.strength(pages, links, gp, gr), "gsc": info}
 
 
 @app.get("/healthz")

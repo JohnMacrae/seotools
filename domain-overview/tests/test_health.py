@@ -17,7 +17,7 @@ def page(path, status=200, depth=1, in_sitemap=1, **kw):
 
 
 def link(src, dst, placement="main"):
-    return dict(src=U(src), dst=U(dst), anchor="a", placement=placement, nofollow=0)
+    return dict(src=U(src), dst=U(dst), anchor="a" + src, placement=placement, nofollow=0)  # anchor varies so tiny graphs have no sitewide link
 
 
 def test_graph():
