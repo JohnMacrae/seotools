@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domain Overview</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f6fde; --accent2: #e3742f; --good: #1f9d55; --bad: #d64545;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; letter-spacing: .2px; }
+  form { display: flex; gap: 8px; flex: 1; min-width: 320px; }
+  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #fff; color: var(--ink); }
+  input[name=domain] { flex: 1; }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+  button:disabled { opacity: .6; cursor: wait; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .meta select { padding: 4px 8px; font-size: 12px; }
+  .grid { display: grid; gap: 16px; }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .two { grid-template-columns: 2fr 1fr; }
+  .halves { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) { .two, .halves { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; min-width: 0; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .big { font-size: 28px; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .moves { display: flex; gap: 12px; font-size: 13px; margin-top: 6px; }
+  .up { color: var(--good); } .down { color: var(--bad); }
+  .chart { position: relative; height: 260px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: #fff; color: var(--muted); padding: 3px 10px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--card); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.wrap { white-space: normal; word-break: break-all; }
+  .scroll { max-height: 440px; overflow: auto; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #e8f0fd; color: var(--accent); margin-left: 4px; }
+  .err { background: #fdeaea; color: #8a1f1f; border: 1px solid #f3c2c2; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  .recent a { display: inline-block; margin: 4px 10px 4px 0; }
+  .filter { padding: 4px 8px; font-size: 12px; width: 180px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Domain Overview</h1>
+  <form id="f">
+    <input name="domain" placeholder="Enter a domain, e.g. serenitybrides.com" autocomplete="off" required>
+    <select name="location" title="Database">
+      <option value="2826">UK</option>
+      <option value="2840">US</option>
+      <option value="2372">Ireland</option>
+      <option value="2036">Australia</option>
+      <option value="2124">Canada</option>
+    </select>
+    <button id="go">Analyse</button>
+  </form>
+</header>
+
+<main id="app">
+  <div class="card"><div class="empty" id="landing">Loading…</div></div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
+const money = n => n == null ? "—" : "£" + Number(n).toLocaleString("en-GB", {maximumFractionDigits: 0});
+const short = u => { try { const x = new URL(u); return x.pathname + x.search || "/"; } catch { return u || ""; } };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let charts = [], state = null;
+
+function params() { return new URLSearchParams(location.search); }
+
+async function landing() {
+  const r = await fetch("api/recent").then(r => r.json());
+  const list = r.domains.map(d => `<a href="?d=${encodeURIComponent(d.domain)}">${esc(d.domain)}</a>`).join("");
+  $("#app").innerHTML = `<div class="card"><h2>Recent lookups</h2>
+    <div class="recent">${list || '<span class="sub">No lookups yet — enter a domain above.</span>'}</div>
+    <div class="sub" style="margin-top:12px">Total DataForSEO spend recorded: $${r.total_spent.toFixed(3)}</div></div>`;
+}
+
+async function load(domain, loc, opts = {}) {
+  const btn = $("#go"); btn.disabled = true; btn.textContent = "Loading…";
+  const q = new URLSearchParams({domain, location: loc});
+  if (opts.refresh) q.set("refresh", "1");
+  if (opts.snapshot) q.set("snapshot", opts.snapshot);
+  try {
+    const res = await fetch("api/overview?" + q);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    const hist = await fetch(`api/history?domain=${encodeURIComponent(data.domain)}&location=${loc}`).then(r => r.json());
+    state = data; render(data, hist);
+  } catch (e) {
+    $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Analyse"; }
+}
+
+function render(d, hist) {
+  charts.forEach(c => c.destroy()); charts = [];
+  const h = d.headline;
+  const snapOpts = hist.map(s => `<option value="${s.id}" ${s.id === d.snapshot_id ? "selected" : ""}>${s.fetched_at.replace("T", " ")} · ${fmt(s.headline.traffic)} traffic</option>`).join("");
+  $("#app").innerHTML = `
+    ${d.errors?.length ? `<div class="err">Some panels failed: ${esc(d.errors.join("; "))}</div>` : ""}
+    <div class="meta">
+      <strong style="font-size:18px;color:var(--ink)">${esc(d.domain)}</strong>
+      <span>Snapshot <select id="snap">${snapOpts}</select></span>
+      <span>${d.cached ? "from cache" : "fresh"} · cost $${(d.cost || 0).toFixed(3)}</span>
+      <button class="ghost" id="refresh" style="padding:4px 10px;font-size:12px">Refresh (paid)</button>
+      <a href="./">All lookups</a>
+    </div>
+
+    <div class="grid tiles">
+      <div class="card"><h2>Organic keywords</h2><div class="big">${fmt(h.keywords)}</div>
+        <div class="moves"><span class="up">+${fmt(h.new)} new</span><span class="up">▲ ${fmt(h.up)}</span><span class="down">▼ ${fmt(h.down)}</span><span class="down">${fmt(h.lost)} lost</span></div></div>
+      <div class="card"><h2>Organic traffic / mo</h2><div class="big">${fmt(h.traffic)}</div><div class="sub">Estimated visits from ranked keywords</div></div>
+      <div class="card"><h2>Traffic value</h2><div class="big">${money(h.traffic_value)}</div><div class="sub">What this traffic would cost in Google Ads</div></div>
+      <div class="card"><h2>Competitors found</h2><div class="big">${fmt(d.competitors.length)}</div><div class="sub">Top by shared keywords</div></div>
+    </div>
+
+    <div class="grid two" style="margin-top:16px">
+      <div class="card"><h2>Trend (12 months)
+        <span class="seg" id="tsel"><button data-k="traffic" class="on">Traffic</button><button data-k="keywords">Keywords</button><button data-k="top10">Top 10</button></span></h2>
+        <div class="chart"><canvas id="trend"></canvas></div></div>
+      <div class="card"><h2>Ranking positions</h2><div class="chart"><canvas id="pos"></canvas></div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px"><h2>Top organic keywords (${d.keywords.length})
+      <input class="filter" id="kwf" placeholder="Filter keywords…"></h2>
+      <div class="scroll">${table("kw", [
+        ["keyword","Keyword"],["position","Pos","num"],["volume","Volume","num"],["kd","KD","num"],["cpc","CPC","num"],["traffic","Traffic","num"],["url","URL"]
+      ], d.keywords)}</div></div>
+
+    <div class="grid halves" style="margin-top:16px">
+      <div class="card"><h2>Main organic competitors</h2>
+        <div class="scroll">${table("comp", [
+          ["domain","Domain"],["common","Common kw","num"],["avg_position","Avg pos","num"],["keywords","Keywords","num"],["traffic","Traffic","num"]
+        ], d.competitors)}</div></div>
+      <div class="card"><h2>Competitive positioning <span class="sub" style="text-transform:none;letter-spacing:0">bubble = common keywords</span></h2>
+        <div class="chart" style="height:340px"><canvas id="map"></canvas></div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px"><h2>Top pages</h2>
+      <div class="scroll">${table("pages", [["url","URL"],["keywords","Keywords","num"],["traffic","Traffic","num"]], d.pages)}</div></div>
+  `;
+
+  $("#snap").onchange = e => load(d.domain, d.location_code, {snapshot: e.target.value});
+  $("#refresh").onclick = () => { if (confirm("Fetch fresh data from DataForSEO? This costs credits.")) load(d.domain, d.location_code, {refresh: true}); };
+  $("#kwf").oninput = e => { const q = e.target.value.toLowerCase(); fillRows("kw", d.keywords.filter(k => (k.keyword || "").toLowerCase().includes(q))); };
+  document.querySelectorAll("th[data-sort]").forEach(th => th.onclick = () => sortTable(th));
+  drawTrend("traffic");
+  $("#tsel").onclick = e => { const b = e.target.closest("button"); if (!b) return;
+    $("#tsel").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); drawTrend(b.dataset.k); };
+  drawPositions(); drawMap();
+}
+
+const COLS = {};
+function table(id, cols, rows) {
+  COLS[id] = cols;
+  return `<table id="t-${id}"><thead><tr>${cols.map(([k, l, c]) => `<th data-sort="${k}" data-t="${id}" class="${c || ""}">${l}</th>`).join("")}</tr></thead>
+    <tbody>${rowsHtml(id, rows)}</tbody></table>`;
+}
+function rowsHtml(id, rows) {
+  if (!rows.length) return `<tr><td colspan="9" class="sub">No data</td></tr>`;
+  return rows.map(r => `<tr>${COLS[id].map(([k, , c]) => `<td class="${c || ""} ${k === "url" ? "wrap" : ""}">${cell(id, k, r)}</td>`).join("")}</tr>`).join("");
+}
+function cell(id, k, r) {
+  const v = r[k];
+  if (k === "url") return v ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(short(v))}</a>` : "";
+  if (k === "domain") return `<a href="?d=${encodeURIComponent(v)}&l=${state.location_code}">${esc(v)}</a>`;
+  if (k === "cpc") return v == null ? "—" : "£" + Number(v).toFixed(2);
+  if (k === "position") {
+    let tag = "";
+    if (r.is_new) tag = `<span class="pill">new</span>`;
+    else if (r.previous && r.previous !== v) tag = r.previous > v ? ` <span class="up">▲${r.previous - v}</span>` : ` <span class="down">▼${v - r.previous}</span>`;
+    return fmt(v) + tag;
+  }
+  if (k === "keyword") return esc(v);
+  return typeof v === "number" ? fmt(v) : esc(v ?? "—");
+}
+function fillRows(id, rows) { $(`#t-${id} tbody`).innerHTML = rowsHtml(id, rows); }
+function sortTable(th) {
+  const id = th.dataset.t, k = th.dataset.sort;
+  const src = {kw: state.keywords, comp: state.competitors, pages: state.pages}[id];
+  const dir = th.dataset.dir === "asc" ? "desc" : "asc"; th.dataset.dir = dir;
+  const sorted = [...src].sort((a, b) => {
+    const x = a[k] ?? (dir === "asc" ? Infinity : -Infinity), y = b[k] ?? (dir === "asc" ? Infinity : -Infinity);
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * (dir === "asc" ? 1 : -1);
+  });
+  fillRows(id, sorted);
+}
+
+const base = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+  scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: "#eef0f4" } } } };
+
+function drawTrend(key) {
+  const old = charts.find(c => c.canvas.id === "trend"); if (old) { old.destroy(); charts = charts.filter(c => c !== old); }
+  const t = state.trend;
+  charts.push(new Chart($("#trend"), { type: "line",
+    data: { labels: t.map(r => r.month), datasets: [{ data: t.map(r => r[key]), borderColor: "#2f6fde", backgroundColor: "rgba(47,111,222,.12)", fill: true, tension: .3, pointRadius: 3 }] },
+    options: base }));
+}
+function drawPositions() {
+  const p = state.positions;
+  charts.push(new Chart($("#pos"), { type: "bar",
+    data: { labels: p.map(r => r.bucket), datasets: [{ data: p.map(r => r.count), backgroundColor: ["#1f4fa8","#2f6fde","#5b8ee8","#8fb2f0","#bcd0f6","#dfe8fa"] }] },
+    options: base }));
+}
+function drawMap() {
+  const c = state.competitors;
+  const max = Math.max(1, ...c.map(r => r.common));
+  const pts = c.map(r => ({ x: r.keywords, y: r.traffic, r: 4 + 18 * Math.sqrt(r.common / max), label: r.domain }));
+  pts.push({ x: state.headline.keywords, y: state.headline.traffic, r: 10, label: state.domain, self: true });
+  charts.push(new Chart($("#map"), { type: "bubble",
+    data: { datasets: [{ data: pts, backgroundColor: pts.map(p => p.self ? "rgba(227,116,47,.85)" : "rgba(47,111,222,.35)"), borderColor: pts.map(p => p.self ? "#e3742f" : "#2f6fde") }] },
+    options: { ...base,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${fmt(ctx.raw.x)} kw, ${fmt(ctx.raw.y)} traffic` } } },
+      scales: { x: { type: "logarithmic", title: { display: true, text: "Organic keywords" } }, y: { type: "logarithmic", title: { display: true, text: "Organic traffic" } } } } }));
+}
+
+$("#f").onsubmit = e => {
+  e.preventDefault();
+  const d = e.target.domain.value.trim(), l = e.target.location.value;
+  history.pushState(null, "", `?d=${encodeURIComponent(d)}&l=${l}`);
+  load(d, l);
+};
+function route() {
+  const p = params(), d = p.get("d"), l = p.get("l") || "2826";
+  $("#f").domain.value = d || ""; $("#f").location.value = l;
+  d ? load(d, l) : landing();
+}
+window.onpopstate = route;
+route();
+</script>
+</body>
+</html>

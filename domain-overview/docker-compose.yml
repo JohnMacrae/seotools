@@ -1,0 +1,10 @@
+services:
+  domain-overview:
+    build: .
+    container_name: domain-overview
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8095:8000"
+    volumes:
+      - ./data:/data
