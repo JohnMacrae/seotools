@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import dfs
+from . import compare, dfs
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
 CACHE_DAYS = int(os.environ.get("CACHE_DAYS", "7"))
@@ -38,6 +38,17 @@ def db() -> sqlite3.Connection:
             data TEXT NOT NULL)"""
     )
     con.execute("CREATE INDEX IF NOT EXISTS ix_snap ON snapshots(domain, location_code, fetched_at)")
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS comparisons (
+            id INTEGER PRIMARY KEY,
+            domain TEXT NOT NULL,
+            competitors TEXT NOT NULL,
+            location_code INTEGER NOT NULL,
+            language_code TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            cost REAL,
+            data TEXT NOT NULL)"""
+    )
     return con
 
 
@@ -125,8 +136,86 @@ def recent():
             "SELECT domain, MAX(fetched_at) AS last, COUNT(*) AS n, SUM(cost) AS spent "
             "FROM snapshots GROUP BY domain ORDER BY last DESC LIMIT 30"
         ).fetchall()
-        total = con.execute("SELECT COALESCE(SUM(cost),0) FROM snapshots").fetchone()[0]
+        total = con.execute(
+            "SELECT (SELECT COALESCE(SUM(cost),0) FROM snapshots) + (SELECT COALESCE(SUM(cost),0) FROM comparisons)"
+        ).fetchone()[0]
     return {"domains": [dict(r) for r in rows], "total_spent": round(total, 4)}
+
+
+@app.get("/compare")
+def compare_page():
+    return FileResponse(STATIC / "compare.html")
+
+
+@app.get("/api/suggest")
+def suggest(domain: str, location: int = 2826):
+    """Competitors from the latest overview snapshot, best first."""
+    d = clean_domain(domain)
+    with closing(db()) as con:
+        row = con.execute(
+            "SELECT data FROM snapshots WHERE domain=? AND location_code=? ORDER BY fetched_at DESC LIMIT 1",
+            (d, location),
+        ).fetchone()
+    if not row:
+        return []
+    return [c["domain"].removeprefix("www.") for c in json.loads(row["data"]).get("competitors", [])][:10]
+
+
+@app.get("/api/compare")
+async def compare_api(
+    domain: str,
+    competitors: str = Query(..., description="Comma-separated, up to 3"),
+    location: int = 2826,
+    language: str = "en",
+    refresh: bool = False,
+    id: int | None = None,
+):
+    d = clean_domain(domain)
+    comps = []
+    for c in competitors.split(","):
+        if c.strip():
+            cd = clean_domain(c)
+            if cd != d and cd not in comps:
+                comps.append(cd)
+    if not 1 <= len(comps) <= 3:
+        raise HTTPException(400, "Give 1 to 3 competitor domains")
+    key = ",".join(sorted(comps))
+    with closing(db()) as con:
+        if id:
+            row = con.execute("SELECT * FROM comparisons WHERE id=?", (id,)).fetchone()
+            if not row:
+                raise HTTPException(404, "Comparison not found")
+            return _wrap(row, cached=True)
+        if not refresh:
+            cutoff = (dt.datetime.utcnow() - dt.timedelta(days=CACHE_DAYS)).isoformat()
+            row = con.execute(
+                "SELECT * FROM comparisons WHERE domain=? AND competitors=? AND location_code=? AND language_code=? "
+                "AND fetched_at>=? ORDER BY fetched_at DESC LIMIT 1",
+                (d, key, location, language, cutoff),
+            ).fetchone()
+            if row:
+                return _wrap(row, cached=True)
+    data = await compare.run(d, comps, location, language)
+    if len(data["errors"]) >= 3 * len(comps) + 3:
+        raise HTTPException(502, "; ".join(data["errors"]))
+    now = dt.datetime.utcnow().isoformat(timespec="seconds")
+    with closing(db()) as con:
+        cur = con.execute(
+            "INSERT INTO comparisons(domain, competitors, location_code, language_code, fetched_at, cost, data) VALUES (?,?,?,?,?,?,?)",
+            (d, key, location, language, now, data["cost"], json.dumps(data)),
+        )
+        con.commit()
+        row = con.execute("SELECT * FROM comparisons WHERE id=?", (cur.lastrowid,)).fetchone()
+    return _wrap(row, cached=False)
+
+
+@app.get("/api/comparisons")
+def comparisons():
+    with closing(db()) as con:
+        rows = con.execute(
+            "SELECT id, domain, competitors, location_code, fetched_at, cost FROM comparisons ORDER BY fetched_at DESC LIMIT 30"
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/healthz")

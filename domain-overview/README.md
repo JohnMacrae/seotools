@@ -1,4 +1,4 @@
-# Domain Overview
+# Domain Overview + Competitor Gap
 
 A self-hosted, Semrush-style domain overview built on the DataForSEO Labs API.
 
@@ -9,6 +9,24 @@ competitors and a competitive positioning map.
 Every lookup is saved as a dated snapshot in SQLite (`./data/overview.db`). A repeat lookup
 within `CACHE_DAYS` is served from the cache for free; "Refresh (paid)" forces a new fetch.
 Past snapshots can be picked from the dropdown.
+
+## Competitor gap (`/compare`)
+
+Compare your domain with up to 3 competitors and see whether the gap is **on-page** or **off-page**:
+
+- **Verdict**: what share of the search volume you lose to competitors looks on-page vs off-page.
+- **Keywords where they beat you**: every shared keyword with each site's position and ranking page. Each lost keyword
+  is classified by comparing the competitor's ranking page and domain authority with yours:
+  - *off-page*: their domain rank is >= 1.25x yours, or their page has >= 2x your page's referring domains
+  - *on-page*: you have similar or more authority but still rank lower (relevance, content, page targeting)
+  - It also flags when your homepage is ranking against a competitor's dedicated page.
+- **Content gap**: keywords competitors rank for and you don't (brand terms removed). These need new pages or sections.
+- **Authority**: domain rank, referring domains, spam score for every site.
+- **Homepage audit**: title, description, H1s, word count, load time and issues, side by side.
+- **Link gap**: sites linking to competitors but not to you (spammy ones hidden), for outreach.
+
+Competitor suggestions come from your latest Domain overview of the same domain. Results are cached for `CACHE_DAYS`.
+A fresh comparison of 3 competitors makes about 15 DataForSEO calls; the cost is shown on the page.
 
 ## Deploy on dnas
 

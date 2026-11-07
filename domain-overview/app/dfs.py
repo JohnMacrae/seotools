@@ -9,13 +9,15 @@ from pathlib import Path
 
 import httpx
 
-BASE = "https://api.dataforseo.com/v3/dataforseo_labs/google"
+ROOT = "https://api.dataforseo.com/v3"
+BASE = ROOT + "/dataforseo_labs/google"
 LOGIN = os.environ.get("DFS_LOGIN", "")
 PASSWORD = os.environ.get("DFS_PASSWORD", "")
 MOCK = os.environ.get("DFS_MOCK", "") == "1"
 KEYWORD_LIMIT = int(os.environ.get("KEYWORD_LIMIT", "100"))
 COMPETITOR_LIMIT = int(os.environ.get("COMPETITOR_LIMIT", "20"))
 PAGE_LIMIT = int(os.environ.get("PAGE_LIMIT", "20"))
+_SEM = asyncio.Semaphore(int(os.environ.get("DFS_CONCURRENCY", "2")))
 
 POS_BUCKETS = [
     ("1", ["pos_1"]),
@@ -32,19 +34,29 @@ class DFSError(Exception):
 
 
 async def _post(client: httpx.AsyncClient, endpoint: str, task: dict) -> tuple[dict | None, float]:
-    """POST one task to a live endpoint. Returns (result[0] or None, cost)."""
+    """POST one task to a Labs live endpoint. Returns (result[0] or None, cost)."""
+    return await post_path(client, f"dataforseo_labs/google/{endpoint}/live", task, mock_name=endpoint)
+
+
+async def post_path(client: httpx.AsyncClient, path: str, task: dict, mock_name: str | None = None) -> tuple[dict | None, float]:
+    """POST one task to any v3 path (e.g. 'backlinks/summary/live'). Returns (result[0] or None, cost)."""
     if MOCK:
-        return _mock(endpoint), 0.0
-    r = await client.post(f"{BASE}/{endpoint}/live", json=[task])
+        return _mock(mock_name or path.replace("/", "_")), 0.0
+    async with _SEM:
+        r = await client.post(f"{ROOT}/{path}", json=[task])
     r.raise_for_status()
     body = r.json()
     if body.get("status_code") != 20000:
-        raise DFSError(f"{endpoint}: {body.get('status_message')}")
+        raise DFSError(f"{path}: {body.get('status_message')}")
     t = (body.get("tasks") or [{}])[0]
     if t.get("status_code") != 20000:
-        raise DFSError(f"{endpoint}: {t.get('status_message')}")
+        raise DFSError(f"{path}: {t.get('status_message')}")
     res = (t.get("result") or [None])[0]
     return res, float(body.get("cost") or 0)
+
+
+def client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(auth=httpx.BasicAuth(LOGIN, PASSWORD), timeout=120)
 
 
 def _mock(endpoint: str) -> dict | None:
@@ -60,23 +72,22 @@ async def fetch_overview(domain: str, location_code: int, language_code: str) ->
     base = {"target": domain, "location_code": location_code, "language_code": language_code}
     date_from = (dt.date.today().replace(day=1) - dt.timedelta(days=365)).isoformat()
 
-    auth = httpx.BasicAuth(LOGIN, PASSWORD)
-    async with httpx.AsyncClient(auth=auth, timeout=90) as client:
+    async with client() as c:
         calls = await asyncio.gather(
-            _post(client, "domain_rank_overview", base),
-            _post(client, "historical_rank_overview", {**base, "date_from": date_from}),
-            _post(client, "ranked_keywords", {
+            _post(c, "domain_rank_overview", base),
+            _post(c, "historical_rank_overview", {**base, "date_from": date_from}),
+            _post(c, "ranked_keywords", {
                 **base,
                 "limit": KEYWORD_LIMIT,
                 "item_types": ["organic"],
                 "order_by": ["ranked_serp_element.serp_item.etv,desc"],
             }),
-            _post(client, "relevant_pages", {
+            _post(c, "relevant_pages", {
                 **base,
                 "limit": PAGE_LIMIT,
                 "order_by": ["metrics.organic.etv,desc"],
             }),
-            _post(client, "competitors_domain", {
+            _post(c, "competitors_domain", {
                 **base,
                 "limit": COMPETITOR_LIMIT + 1,
                 "exclude_top_domains": True,

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Competitor Gap</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f6fde; --on: #2f6fde; --off: #e3742f; --good: #1f9d55; --bad: #d64545; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; margin-bottom: 10px; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #fff; color: var(--ink); }
+  input { width: 190px; } input#you { width: 210px; font-weight: 600; }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); padding: 4px 10px; font-size: 12px; }
+  button:disabled { opacity: .6; cursor: wait; }
+  .vs { color: var(--muted); font-size: 12px; }
+  .chips { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .chip { display: inline-block; border: 1px solid var(--line); border-radius: 14px; padding: 2px 9px; margin: 2px 4px 2px 0; cursor: pointer; color: var(--ink); background: #fafbfc; }
+  .chip:hover { border-color: var(--accent); }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .grid { display: grid; gap: 16px; }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; min-width: 0; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .big { font-size: 26px; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .headline { font-size: 15px; line-height: 1.55; margin: 0 0 14px; }
+  .split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; font-size: 12px; color: #fff; font-weight: 600; }
+  .split div { display: flex; align-items: center; padding: 0 10px; white-space: nowrap; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--card); white-space: nowrap; }
+  th[data-sort] { cursor: pointer; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.you td { background: #fff7f0; font-weight: 600; }
+  .scroll { max-height: 520px; overflow: auto; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+  .pill.on-page { background: #e8f0fd; color: var(--on); }
+  .pill.off-page { background: #fdf0e6; color: #b5561c; }
+  .pill.unknown { background: #eef0f4; color: var(--muted); }
+  .reason { color: var(--muted); font-size: 12px; max-width: 420px; }
+  .pos { font-variant-numeric: tabular-nums; }
+  .better { color: var(--good); font-weight: 600; } .worse { color: var(--bad); }
+  .issues { color: var(--bad); font-size: 12px; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .err { background: #fdeaea; color: #8a1f1f; border: 1px solid #f3c2c2; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: #fff; color: var(--muted); padding: 3px 10px; font-size: 12px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .filter { padding: 4px 8px; font-size: 12px; width: 180px; }
+  .wrap { word-break: break-word; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare" class="on">Competitor gap</a></nav></div>
+  <form id="f">
+    <input id="you" name="you" placeholder="Your domain" required>
+    <span class="vs">vs</span>
+    <input name="c1" placeholder="Competitor 1" required>
+    <input name="c2" placeholder="Competitor 2">
+    <input name="c3" placeholder="Competitor 3">
+    <select name="location">
+      <option value="2826">UK</option><option value="2840">US</option><option value="2372">Ireland</option>
+      <option value="2036">Australia</option><option value="2124">Canada</option>
+    </select>
+    <button id="go">Compare</button>
+  </form>
+  <div class="chips" id="chips"></div>
+</header>
+<main id="app"></main>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const path = u => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u || ""; } };
+let S = null;
+
+async function home() {
+  const rows = await fetch("api/comparisons").then(r => r.json());
+  $("#app").innerHTML = `<div class="card"><h2>Past comparisons</h2>${rows.length ? `<table><tr><th>Your domain</th><th>Competitors</th><th>When</th><th class="num">Cost</th></tr>
+    ${rows.map(r => `<tr><td><a href="?id=${r.id}&d=${encodeURIComponent(r.domain)}&c=${encodeURIComponent(r.competitors)}&l=${r.location_code}">${esc(r.domain)}</a></td>
+      <td>${esc(r.competitors.split(",").join(", "))}</td><td>${r.fetched_at.replace("T", " ")}</td><td class="num">$${(r.cost || 0).toFixed(3)}</td></tr>`).join("")}</table>`
+    : `<div class="sub">None yet. Enter your domain and up to 3 competitors above. Tip: run a Domain overview of your site first and its competitors appear here as suggestions.</div>`}</div>`;
+}
+
+async function suggestions() {
+  const d = $("#f").you.value.trim(); if (!d) { $("#chips").innerHTML = ""; return; }
+  try {
+    const list = await fetch(`api/suggest?domain=${encodeURIComponent(d)}&location=${$("#f").location.value}`).then(r => r.ok ? r.json() : []);
+    $("#chips").innerHTML = list.length ? "Competitors from your last overview: " + list.map(c => `<span class="chip">${esc(c)}</span>`).join("") : "";
+    $("#chips").querySelectorAll(".chip").forEach(ch => ch.onclick = () => {
+      const f = $("#f"); const slot = ["c1","c2","c3"].find(n => !f[n].value.trim()); if (slot) f[slot].value = ch.textContent;
+    });
+  } catch {}
+}
+
+async function run(q) {
+  const btn = $("#go"); btn.disabled = true; btn.textContent = "Comparing… (up to a minute)";
+  try {
+    const res = await fetch("api/compare?" + q);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    S = data; render();
+  } catch (e) { $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  finally { btn.disabled = false; btn.textContent = "Compare"; }
+}
+
+function render() {
+  const v = S.verdict, comps = S.competitors;
+  const lostShare = v.onpage_share + v.offpage_share;
+  const unk = Math.max(0, 100 - lostShare);
+  $("#app").innerHTML = `
+    ${S.errors?.length ? `<div class="err">Some data failed: ${esc(S.errors.join("; "))}</div>` : ""}
+    <div class="card">
+      <h2>Verdict <small>${S.cached ? "from cache" : "fresh"} · ${S.fetched_at.replace("T", " ")} · cost $${(S.cost || 0).toFixed(3)}
+        <button class="ghost" id="refresh">Refresh (paid)</button></small></h2>
+      <p class="headline">${esc(v.headline || "Not enough shared data to judge.")}</p>
+      ${v.losing_keywords ? `<div class="split">
+        ${v.onpage_share ? `<div style="background:var(--on);width:${v.onpage_share}%">On-page ${v.onpage_share}%</div>` : ""}
+        ${v.offpage_share ? `<div style="background:var(--off);width:${v.offpage_share}%">Off-page ${v.offpage_share}%</div>` : ""}
+        ${unk ? `<div style="background:#c5cad4;width:${unk}%">?</div>` : ""}</div>
+        <div class="legend"><span><i class="dot" style="background:var(--on)"></i>On-page: you have equal or more authority but rank lower</span>
+          <span><i class="dot" style="background:var(--off)"></i>Off-page: their page or domain has clearly more links</span></div>` : ""}
+    </div>
+
+    <div class="grid tiles">
+      <div class="card"><h2>Losing keywords</h2><div class="big">${fmt(v.losing_keywords)}</div><div class="sub">${fmt(v.losing_volume)} searches/mo where a competitor ranks above you</div></div>
+      <div class="card"><h2>Winning keywords</h2><div class="big">${fmt(v.winning_keywords)}</div><div class="sub">Shared keywords where you rank above all of them</div></div>
+      <div class="card"><h2>Content gap</h2><div class="big">${fmt(v.missing_keywords)}</div><div class="sub">Keywords they rank for and you don't</div></div>
+      <div class="card"><h2>Link gap</h2><div class="big">${fmt(v.linkgap_domains)}</div><div class="sub">Sites linking to competitors, not to you</div></div>
+    </div>
+
+    <div class="card"><h2>Authority (off-page)</h2>
+      <table><tr><th>Domain</th><th class="num">Domain rank</th><th class="num">Referring domains</th><th class="num">of which nofollow</th><th class="num">Backlinks</th><th class="num">Link spam score</th></tr>
+      ${S.sites.map(s => `<tr class="${s.is_you ? "you" : ""}"><td>${esc(s.domain)}${s.is_you ? " (you)" : ""}</td>
+        <td class="num">${fmt(s.rank)}</td><td class="num">${fmt(s.referring_domains)}</td><td class="num">${fmt(s.referring_domains_nofollow)}</td>
+        <td class="num">${fmt(s.backlinks)}</td><td class="num">${s.spam_score == null ? "—" : s.spam_score + "%"}</td></tr>`).join("")}</table>
+      <div class="note">Domain rank is DataForSEO's 0–1000 score based on referring domains. A high spam score means many low-quality links that inflate your counts.</div>
+    </div>
+
+    <div class="card"><h2>Homepage audit (on-page)</h2><div class="scroll">${onpageTable()}</div></div>
+
+    <div class="card"><h2>Keywords where they beat you (${fmt(v.losing_keywords)})
+      <span><span class="seg" id="cf"><button class="on" data-c="">All</button><button data-c="on-page">On-page</button><button data-c="off-page">Off-page</button><button data-c="winning">Winning</button></span>
+      <input class="filter" id="kf" placeholder="Filter…"></span></h2>
+      <div class="scroll" id="shared"></div></div>
+
+    <div class="card"><h2>Content gap — they rank, you don't (${fmt(v.missing_keywords)}) <input class="filter" id="mf" placeholder="Filter…"></h2>
+      <div class="scroll" id="missing"></div>
+      <div class="note">Sorted by how many competitors rank, then by volume. Keywords containing a competitor's brand name are removed.</div></div>
+
+    <div class="card"><h2>Link gap — sites linking to competitors but not you</h2>
+      <div class="scroll">${linkgapTable()}</div>
+      <div class="note">Sites with a link spam score of 50% or more are hidden. Sites linking to more than one competitor are the best outreach targets, such as directories, suppliers, venues and local press.</div></div>`;
+
+  $("#refresh").onclick = () => { if (confirm("Run a fresh comparison? This costs DataForSEO credits.")) {
+    const p = new URLSearchParams(location.search); p.delete("id"); run(apiQuery(p, true)); } };
+  let cause = "";
+  const drawShared = () => {
+    const q = $("#kf").value.toLowerCase();
+    $("#shared").innerHTML = sharedTable(S.shared.filter(r =>
+      (!cause || (cause === "winning" ? r.status === "winning" : r.cause === cause)) &&
+      (cause === "winning" || cause ? true : r.status === "losing") && r.keyword.toLowerCase().includes(q)));
+  };
+  $("#cf").onclick = e => { const b = e.target.closest("button"); if (!b) return;
+    $("#cf").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); cause = b.dataset.c; drawShared(); };
+  $("#kf").oninput = drawShared; drawShared();
+  const drawMissing = () => { const q = $("#mf").value.toLowerCase(); $("#missing").innerHTML = missingTable(S.missing.filter(r => r.keyword.toLowerCase().includes(q))); };
+  $("#mf").oninput = drawMissing; drawMissing();
+}
+
+function onpageTable() {
+  const sites = S.sites;
+  const rows = [
+    ["On-page score", s => s?.score?.toFixed(1)],
+    ["Title", s => s?.title ? `${esc(s.title)} <span class="sub">(${s.title_length})</span>` : `<span class="issues">missing</span>`],
+    ["Meta description", s => s?.description ? `${esc(s.description.slice(0, 160))}${s.description.length > 160 ? "…" : ""} <span class="sub">(${s.description_length})</span>` : `<span class="issues">missing</span>`],
+    ["H1", s => s ? (s.h1_count ? s.h1.map(esc).join("<br>") + (s.h1_count > 1 ? ` <span class="sub">(${s.h1_count} H1s)</span>` : "") : `<span class="issues">none</span>`) : "—"],
+    ["H2 count", s => fmt(s?.h2_count)],
+    ["Words on page", s => fmt(s?.words)],
+    ["Internal links", s => fmt(s?.internal_links)],
+    ["Images", s => fmt(s?.images)],
+    ["Load time (ms)", s => fmt(s?.load_ms)],
+    ["Issues", s => s?.issues?.length ? `<span class="issues">${s.issues.map(esc).join("<br>")}</span>` : (s ? "None found" : "—")],
+  ];
+  return `<table><tr><th></th>${sites.map(s => `<th>${esc(s.domain)}${s.is_you ? " (you)" : ""}</th>`).join("")}</tr>
+    ${rows.map(([label, f]) => `<tr><td><strong>${label}</strong></td>${sites.map(s => `<td class="wrap">${s.onpage ? f(s.onpage) : (label === "Title" ? "Could not fetch" : "")}</td>`).join("")}</tr>`).join("")}</table>`;
+}
+
+function posCell(p, you) {
+  if (p == null) return "—";
+  const cls = you == null ? "" : p < you ? "worse" : p > you ? "better" : "";
+  return `<span class="pos ${cls}">${p}</span>`;
+}
+function sharedTable(rows) {
+  const comps = S.competitors;
+  if (!rows.length) return `<div class="sub">No keywords.</div>`;
+  return `<table><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th><th class="num">You</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Cause</th><th>Why</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.keyword)}<div class="sub">${r.you.url ? `you: <a href="${esc(r.you.url)}" target="_blank" rel="noopener">${esc(path(r.you.url))}</a>` : ""}</div></td>
+      <td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
+      <td class="num"><strong>${r.you.position ?? "—"}</strong></td>
+      ${comps.map(c => { const e = r.competitors[c]; return `<td class="num">${e ? `${posCell(e.position, r.you.position)}${e.url ? `<div class="sub"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(path(e.url))}</a></div>` : ""}` : "—"}</td>`; }).join("")}
+      <td>${r.status === "losing" ? `<span class="pill ${r.cause}">${r.cause}</span>` : `<span class="better">winning</span>`}</td>
+      <td class="reason">${esc(r.reason)}</td></tr>`).join("")}</table>`;
+}
+function missingTable(rows) {
+  const comps = S.competitors;
+  if (!rows.length) return `<div class="sub">No keywords.</div>`;
+  return `<table><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Their best page</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
+      ${comps.map(c => `<td class="num">${r.competitors[c]?.position ?? "—"}</td>`).join("")}
+      <td class="wrap">${r.best_url ? `<a href="${esc(r.best_url)}" target="_blank" rel="noopener">${esc(r.best_url.replace(/^https?:\/\//, ""))}</a>` : ""}</td></tr>`).join("")}</table>`;
+}
+function linkgapTable() {
+  if (!S.linkgap.length) return `<div class="sub">No link-gap domains found.</div>`;
+  return `<table><tr><th>Referring site</th><th>Links to</th><th class="num">Site rank</th><th class="num">Spam score</th></tr>
+    ${S.linkgap.map(r => `<tr><td><a href="https://${esc(r.domain)}" target="_blank" rel="noopener">${esc(r.domain)}</a></td>
+      <td>${r.links_to.map(esc).join(", ")}</td><td class="num">${fmt(r.rank)}</td><td class="num">${r.spam_score}%</td></tr>`).join("")}</table>`;
+}
+
+function apiQuery(p, refresh) {
+  const q = new URLSearchParams({ domain: p.get("d"), competitors: p.get("c"), location: p.get("l") || "2826" });
+  if (p.get("id")) q.set("id", p.get("id"));
+  if (refresh) q.set("refresh", "1");
+  return q.toString();
+}
+
+$("#f").onsubmit = e => {
+  e.preventDefault();
+  const f = e.target;
+  const comps = [f.c1.value, f.c2.value, f.c3.value].map(s => s.trim()).filter(Boolean).join(",");
+  const p = new URLSearchParams({ d: f.you.value.trim(), c: comps, l: f.location.value });
+  history.pushState(null, "", "?" + p);
+  run(apiQuery(p));
+};
+$("#f").you.addEventListener("change", suggestions);
+$("#f").location.addEventListener("change", suggestions);
+
+function route() {
+  const p = new URLSearchParams(location.search), f = $("#f");
+  if (p.get("d")) {
+    f.you.value = p.get("d"); f.location.value = p.get("l") || "2826";
+    (p.get("c") || "").split(",").forEach((c, i) => { if (i < 3) f["c" + (i + 1)].value = c; });
+    suggestions(); run(apiQuery(p));
+  } else { f.you.value = f.you.value || "serenitybrides.com"; suggestions(); home(); }
+}
+window.onpopstate = route;
+route();
+</script>
+</body>
+</html>

@@ -4,7 +4,8 @@ Self-hosted SEO tools for dnas.
 
 | Tool | Folder | Port |
 |---|---|---|
-| Domain Overview (Semrush-style, DataForSEO) | `domain-overview/` | 8095 |
+| Domain Overview (Semrush-style, DataForSEO) | `domain-overview/` → http://dnas:8095 | 8095 |
+| Competitor gap (on-page vs off-page) | same app → http://dnas:8095/compare | 8095 |
 
 ## Install on dnas
 
