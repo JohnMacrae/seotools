@@ -41,7 +41,9 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--card); white-space: nowrap; }
-  th[data-sort] { cursor: pointer; }
+  th[data-sort], table.sortable th { cursor: pointer; }
+  table.sortable th[data-dir="asc"]::after { content: " ▲"; }
+  table.sortable th[data-dir="desc"]::after { content: " ▼"; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   tr.you td { background: #fff7f0; font-weight: 600; }
   .scroll { max-height: 520px; overflow: auto; }
@@ -145,7 +147,7 @@ function render() {
     </div>
 
     <div class="card"><h2>Authority (off-page)</h2>
-      <table><tr><th>Domain</th><th class="num">Domain rank</th><th class="num">Referring domains</th><th class="num">of which nofollow</th><th class="num">Backlinks</th><th class="num">Link spam score</th></tr>
+      <table class="sortable"><tr><th>Domain</th><th class="num">Domain rank</th><th class="num">Referring domains</th><th class="num">of which nofollow</th><th class="num">Backlinks</th><th class="num">Link spam score</th></tr>
       ${S.sites.map(s => `<tr class="${s.is_you ? "you" : ""}"><td>${esc(s.domain)}${s.is_you ? " (you)" : ""}</td>
         <td class="num">${fmt(s.rank)}</td><td class="num">${fmt(s.referring_domains)}</td><td class="num">${fmt(s.referring_domains_nofollow)}</td>
         <td class="num">${fmt(s.backlinks)}</td><td class="num">${s.spam_score == null ? "—" : s.spam_score + "%"}</td></tr>`).join("")}</table>
@@ -209,7 +211,7 @@ function posCell(p, you) {
 function sharedTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th><th class="num">You</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Cause</th><th>Why</th></tr>
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th><th class="num">You</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Cause</th><th>Why</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.keyword)}<div class="sub">${r.you.url ? `you: <a href="${esc(r.you.url)}" target="_blank" rel="noopener">${esc(path(r.you.url))}</a>` : ""}</div></td>
       <td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
       <td class="num"><strong>${r.you.position ?? "—"}</strong></td>
@@ -220,7 +222,7 @@ function sharedTable(rows) {
 function missingTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Their best page</th></tr>
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Their best page</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
       ${comps.map(c => `<td class="num">${r.competitors[c]?.position ?? "—"}</td>`).join("")}
       <td class="wrap">${r.best_url ? `<a href="${esc(r.best_url)}" target="_blank" rel="noopener">${esc(r.best_url.replace(/^https?:\/\//, ""))}</a>` : ""}</td></tr>`).join("")}</table>`;
@@ -234,7 +236,7 @@ function linkgapTable() {
     return `<div><a href="${esc(p.url_from)}" target="_blank" rel="noopener">${short(p.url_from)}</a>
       <span class="sub">→ ${short(p.url_to)}${p.anchor ? ` · “${esc(p.anchor)}”` : ""}${p.dofollow === false ? " · nofollow" : ""}</span></div>`;
   }).join("");
-  return `<table><tr><th>Referring site</th><th>Links to</th><th>Linking page</th><th class="num">Site rank</th><th class="num">Spam score</th></tr>
+  return `<table class="sortable"><tr><th>Referring site</th><th>Links to</th><th>Linking page</th><th class="num">Site rank</th><th class="num">Spam score</th></tr>
     ${S.linkgap.map(r => `<tr><td><a href="https://${esc(r.domain)}" target="_blank" rel="noopener">${esc(r.domain)}</a></td>
       <td>${r.links_to.map(esc).join(", ")}</td><td class="wrap">${pageCell(r)}</td><td class="num">${fmt(r.rank)}</td><td class="num">${r.spam_score}%</td></tr>`).join("")}</table>`;
 }
@@ -267,6 +269,33 @@ function route() {
 }
 window.onpopstate = route;
 route();
+
+// Click a header in any table.sortable to sort by that column; click again to reverse.
+// "num" columns sort by the cell's leading number ("—"/blank last), others alphabetically.
+document.addEventListener("click", e => {
+  const th = e.target.closest("table.sortable th");
+  if (!th) return;
+  const table = th.closest("table"), i = th.cellIndex, num = th.classList.contains("num");
+  const dir = th.dataset.dir ? (th.dataset.dir === "asc" ? "desc" : "asc") : (num ? "desc" : "asc");
+  table.querySelectorAll("th").forEach(h => delete h.dataset.dir);
+  th.dataset.dir = dir;
+  const key = tr => {
+    const t = tr.cells[i]?.textContent.trim() || "";
+    if (!num) return t.toLowerCase();
+    const m = t.replace(/,/g, "").match(/^-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+  };
+  const rows = [...table.rows].slice(1);
+  rows.sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x === y) return 0;
+    if (x === null || x === "") return 1;
+    if (y === null || y === "") return -1;
+    const c = num ? x - y : x.localeCompare(y);
+    return dir === "asc" ? c : -c;
+  });
+  rows.forEach(r => r.parentNode.appendChild(r));
+});
 </script>
 </body>
 </html>

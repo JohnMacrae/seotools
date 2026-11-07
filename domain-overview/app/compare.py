@@ -6,6 +6,7 @@ Data used (DataForSEO):
 - Labs domain_intersection (intersections=false) -> keywords the competitor ranks for and we don't (content gap)
 - Backlinks summary                              -> domain-level authority for every site
 - Backlinks domain_intersection                  -> referring domains linking to competitors but not us (link gap)
+- Backlinks bulk_ranks                           -> real 0-1000 domain rank for each link-gap domain
 - Backlinks backlinks (one_per_domain)           -> the page each gap domain links from, per competitor
 - On-Page instant_pages                          -> homepage on-page audit for every site
 """
@@ -292,10 +293,38 @@ async def _linkgap(c, domain: str, competitors: list[str]) -> tuple[list, float]
             "spam_score": max((e.get("backlinks_spam_score") or 0) for e in entries.values()),
             "backlinks": sum(e.get("backlinks") or 0 for e in entries.values()),
         })
+    cost += await _linkgap_ranks(c, rows)
     rows = [r for r in rows if r["spam_score"] < 50]
     rows.sort(key=lambda r: (-r["n"], -r["rank"]))
     cost += await _linkgap_pages(c, rows, competitors)
     return rows, cost
+
+
+async def _linkgap_ranks(c, rows: list) -> float:
+    """Replace each row's intersection-derived rank with the real domain rank from bulk_ranks.
+
+    The intersection "rank" is not the referring domain's rank. A failed call or a missing
+    domain keeps the existing value; this never fails the link gap.
+    """
+    norm = lambda d: re.sub(r"^www\.", "", (d or "").lower())
+    targets = sorted({norm(r["domain"]) for r in rows if r["domain"]})
+    ranks: dict[str, int] = {}
+    cost = 0.0
+    for i in range(0, len(targets), 1000):
+        try:
+            r, c_ = await dfs.post_path(c, "backlinks/bulk_ranks/live", {"targets": targets[i:i + 1000]},
+                                        mock_name="compare_linkgap_ranks")
+        except Exception:
+            continue
+        cost += c_
+        for it in (r or {}).get("items") or []:
+            if it.get("target") and it.get("rank") is not None:
+                ranks[norm(it["target"])] = it["rank"]
+    for row in rows:
+        k = norm(row["domain"])
+        if k in ranks:
+            row["rank"] = ranks[k]
+    return cost
 
 
 async def _linkgap_pages(c, rows: list, competitors: list[str]) -> float:

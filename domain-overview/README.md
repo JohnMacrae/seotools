@@ -23,7 +23,8 @@ Compare your domain with up to 3 competitors and see whether the gap is **on-pag
 - **Content gap**: keywords competitors rank for and you don't (brand terms removed). These need new pages or sections.
 - **Authority**: domain rank, referring domains, spam score for every site.
 - **Homepage audit**: title, description, H1s, word count, load time and issues, side by side.
-- **Link gap**: sites linking to competitors but not to you (spammy ones hidden), with the exact page each link sits on, its target and anchor, for outreach.
+- **Link gap**: sites linking to competitors but not to you (spammy ones hidden), with each site's domain rank (0–1000) and the exact page each link sits on, its target and anchor, for outreach.
+- Click any column header in the link gap, keyword and authority tables to sort; click again to reverse.
 
 Competitor suggestions come from your latest Domain overview of the same domain. Results are cached for `CACHE_DAYS`.
 A fresh comparison of 3 competitors makes about 15 DataForSEO calls; the cost is shown on the page.
