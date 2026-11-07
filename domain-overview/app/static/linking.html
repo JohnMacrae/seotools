@@ -55,7 +55,7 @@
   tr.row { cursor: pointer; } tr.row:hover { background: #f5f8ff; }
   tr.more td { background: #fafbfd; }
   .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; background: #eef0f4; color: var(--muted); white-space: nowrap; }
-  .badge.pass { background: #e1f5e9; color: var(--good); } .badge.fail { background: #fdeaea; color: var(--bad); } .badge.partial, .badge.temp { background: #fdf0e3; color: var(--warn); }
+  .badge.pass { background: #e1f5e9; color: var(--good); } .badge.fail { background: #fdeaea; color: var(--bad); } .badge.wrong { background: #f3e8fb; color: #7b3fa0; } .badge.partial, .badge.temp { background: #fdf0e3; color: var(--warn); }
   .todo { display: grid; grid-template-columns: minmax(160px, 1fr) 3fr; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--line); }
   mark { background: #fff1a8; padding: 0 2px; }
   .planbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
@@ -416,7 +416,7 @@ document.addEventListener("click", e => {
 document.addEventListener("change", e => { if (e.target.id === "gappick") { cur.gapId = +e.target.value; pollGaps(); } });
 
 // ---- Progress ----
-const ST_CLASS = { done: "pass", partial: "partial", missing: "fail", gone: "fail", open: "" };
+const ST_CLASS = { done: "pass", "wrong anchor": "wrong", partial: "partial", missing: "fail", gone: "fail", open: "" };
 
 async function loadProgress(pickId) {
   const plans = (await fetch(`api/crawl/${cur.c.id}/plans`).then(r => r.ok ? r.json() : [])).filter(p => p.status === "done");
@@ -453,10 +453,11 @@ function renderProgress() {
   const c = p.counts;
   h += (p.notes || []).map(n => `<div class="err">${esc(n)}</div>`).join("");
   h += p.checked_crawl_id ? `<div class="sub" style="margin-bottom:10px">Checked against crawl #${p.checked_crawl_id}</div>` : `<div class="sub" style="margin-bottom:10px">Not checked yet.</div>`;
-  h += `<div class="grid tiles">${tile("Done", c.done, "Contextual link in place")}${tile("Partial", c.partial, "Linked, but not in the content")}${tile("Missing", c.missing, "No link yet")}
+  h += `<div class="grid tiles">${tile("Done", c.done, "Contextual link in place")}${tile("Wrong anchor", c["wrong anchor"], "Linked in content, different anchor text")}${tile("Partial", c.partial, "Linked, but not in the content")}${tile("Missing", c.missing, "No link yet")}
     ${tile("Gone", c.gone, "Source or target no longer a 200 page")}${tile("% done", p.pct_done, `of ${fmt(p.total)} links`)}</div>
-    <div class="card"><h2>Suggestions</h2><div class="scroll" style="max-height:640px"><table class="sortable"><tr><th>From</th><th>To</th><th>Anchor</th><th>Status</th><th>Search Console, target page</th></tr>
-    ${p.suggestions.map(s => `<tr><td class="wrap">${link(s.src)}</td><td class="wrap">${link(s.dst)}</td><td>${esc(s.anchor || "")}</td>
+    <div class="card"><h2>Suggestions</h2><div class="scroll" style="max-height:640px"><table class="sortable"><tr><th>From</th><th>To</th><th>Planned anchor</th><th>Live anchor</th><th>Status</th><th>Search Console, target page</th></tr>
+    ${p.suggestions.map(s => `<tr><td class="wrap">${link(s.src)}</td><td class="wrap">${link(s.dst)}</td><td>${esc(s.planned_anchor || "")}</td>
+      <td>${s.anchor_data === false ? `<span class="sub">not recorded</span>` : (s.live_anchors || []).map(a => esc(a || "(no text)")).join("<br>")}</td>
       <td><span class="badge ${ST_CLASS[s.status] || ""}">${esc(s.status)}</span>${s.done_at ? `<div class="sub">done ${esc(s.done_at.slice(0, 10))}</div>` : ""}</td>
       <td>${s.status === "done" ? gscCell(s.gsc) : ""}</td></tr>`).join("")}</table></div></div>
     <div class="card"><h2>Pages built <small class="sub">proposed pages from the latest gap run that now exist</small></h2>

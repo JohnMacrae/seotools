@@ -134,7 +134,7 @@ def db() -> sqlite3.Connection:
             data TEXT)"""
     )
     have = {r[1] for r in con.execute("PRAGMA table_info(suggestions)")}
-    for col, typ in (("done_at", "TEXT"), ("done_crawl_id", "INTEGER")):
+    for col, typ in (("done_at", "TEXT"), ("done_crawl_id", "INTEGER"), ("live_anchors", "TEXT"), ("anchor_data", "INTEGER")):
         if col not in have:
             con.execute(f"ALTER TABLE suggestions ADD COLUMN {col} {typ}")
     gsc.ensure_tables(con)
@@ -584,12 +584,15 @@ def _progress(con, plan_id: int, note: str | None = None) -> dict:
     if not plan:
         raise HTTPException(404, "Plan not found")
     rows = [dict(r) for r in con.execute(
-        "SELECT src,dst,anchor,kind,status,checked_crawl_id,done_at,done_crawl_id FROM suggestions WHERE plan_id=? "
+        "SELECT src,dst,anchor,kind,status,checked_crawl_id,done_at,done_crawl_id,live_anchors,anchor_data FROM suggestions WHERE plan_id=? "
         "ORDER BY dst,src", (plan_id,))]
     for r in rows:
         r["gsc"] = None
+        r["planned_anchor"] = r["anchor"]
+        r["live_anchors"] = json.loads(r["live_anchors"]) if r["live_anchors"] else []
+        r["anchor_data"] = None if r["anchor_data"] is None else bool(r["anchor_data"])
     gsc_note = _gsc_change(con, rows)
-    counts = {k: sum(r["status"] == k for r in rows) for k in ("done", "partial", "missing", "gone", "open")}
+    counts = {k: sum(r["status"] == k for r in rows) for k in ("done", "wrong anchor", "partial", "missing", "gone", "open")}
     checked = max((r["checked_crawl_id"] for r in rows if r["checked_crawl_id"]), default=None)
     built = []
     if checked:
@@ -623,16 +626,21 @@ def check_plan(plan_id: int, crawl: int | None = None):
             raise HTTPException(404, "Crawl not found")
         pages, links = _crawl_data(con, crawl)
         sugg = [dict(r) for r in con.execute("SELECT * FROM suggestions WHERE plan_id=?", (plan_id,))]
-        result = progress.check_links(sugg, pages, links)
+        result = progress.check_links_detail(sugg, pages, links)
         when = (crawl_row["finished_at"] or crawl_row["started_at"])
         for s in sugg:
-            st = result[(s["src"], s["dst"])]
+            res = result[(s["src"], s["dst"])]
+            st = res["status"]
             con.execute("UPDATE suggestions SET status=?, checked_crawl_id=?, done_at=COALESCE(done_at, ?), "
-                        "done_crawl_id=COALESCE(done_crawl_id, ?) WHERE plan_id=? AND src=? AND dst=?",
-                        (st, crawl, when if st == "done" else None, crawl if st == "done" else None, plan_id, s["src"], s["dst"]))
+                        "done_crawl_id=COALESCE(done_crawl_id, ?), live_anchors=?, anchor_data=? "
+                        "WHERE plan_id=? AND src=? AND dst=?",
+                        (st, crawl, when if st == "done" else None, crawl if st == "done" else None,
+                         json.dumps(res["live"]), int(res["anchor_data"]), plan_id, s["src"], s["dst"]))
             s["status"] = st
         con.commit()
         note = None
+        if not any(r["anchor_data"] for r in result.values()):
+            note = "This crawl has no anchor text stored (older crawl); anchors were not checked. Re-crawl to check them."
         targets = sorted({s["dst"] for s in sugg if s["status"] == "done"})
         if targets:
             if gsc.configured():

@@ -21,13 +21,52 @@ def link(src, dst, placement="main", anchor="a"):
 
 PAGES = [page(p) for p in ("/", "/a", "/b", "/c", "/d")] + [page("/gone", 404)]
 LINKS = [link("/a", "/b"), link("/a", "/c", "nav", "c nav"), link("/", "/d")]
-SUG = [{"src": U("/a"), "dst": U("/b")}, {"src": U("/a"), "dst": U("/c")}, {"src": U("/b"), "dst": U("/c")},
-       {"src": U("/a"), "dst": U("/gone")}, {"src": U("/nope"), "dst": U("/c")}]
+SUG = [{"src": U("/a"), "dst": U("/b"), "anchor": "A"}, {"src": U("/a"), "dst": U("/c"), "anchor": "c nav"},
+       {"src": U("/b"), "dst": U("/c"), "anchor": "c"},
+       {"src": U("/a"), "dst": U("/gone"), "anchor": "g"}, {"src": U("/nope"), "dst": U("/c"), "anchor": "c"}]
 
 
 def test_check_links():
     r = progress.check_links(SUG, PAGES, LINKS)
     assert [r[(s["src"], s["dst"])] for s in SUG] == ["done", "partial", "missing", "gone", "gone"]
+
+
+def test_anchor_match_is_case_and_space_insensitive():
+    r = progress.check_links([{"src": U("/a"), "dst": U("/b"), "anchor": "  Blue   DRESS "}], PAGES,
+                             [link("/a", "/b", anchor="blue dress")])
+    assert r[(U("/a"), U("/b"))] == "done"
+
+
+def test_wrong_anchor():
+    sug = [{"src": U("/a"), "dst": U("/b"), "anchor": "blue dress"}]
+    links = [link("/a", "/b", anchor="click here"), link("/a", "/b", "body", "read more")]
+    assert progress.check_links(sug, PAGES, links)[(U("/a"), U("/b"))] == "wrong anchor"
+    d = progress.check_links_detail(sug, PAGES, links)[(U("/a"), U("/b"))]
+    assert d["status"] == "wrong anchor" and sorted(d["live"]) == ["click here", "read more"] and d["anchor_data"]
+
+
+def test_one_matching_anchor_among_several_is_done():
+    sug = [{"src": U("/a"), "dst": U("/b"), "anchor": "blue dress"}]
+    links = [link("/a", "/b", anchor="click here"), link("/a", "/b", "body", "Blue dress")]
+    assert progress.check_links(sug, PAGES, links)[(U("/a"), U("/b"))] == "done"
+
+
+def test_missing_link_with_anchor_planned():
+    sug = [{"src": U("/b"), "dst": U("/c"), "anchor": "c"}]
+    d = progress.check_links_detail(sug, PAGES, LINKS)[(U("/b"), U("/c"))]
+    assert d["status"] == "missing" and d["live"] == []
+
+
+def test_boilerplate_link_stays_partial_even_if_anchor_matches():
+    d = progress.check_links_detail([{"src": U("/a"), "dst": U("/c"), "anchor": "c nav"}], PAGES, LINKS)
+    assert d[(U("/a"), U("/c"))]["status"] == "partial"
+
+
+def test_crawl_without_anchor_data_falls_back():
+    links = [{**l, "anchor": None} for l in LINKS]
+    sug = [{"src": U("/a"), "dst": U("/b"), "anchor": "whatever"}]
+    d = progress.check_links_detail(sug, PAGES, links)[(U("/a"), U("/b"))]
+    assert d["status"] == "done" and d["anchor_data"] is False and d["live"] == []
 
 
 def test_built_pages():
@@ -95,14 +134,18 @@ def test_check_endpoint(tmp_path, monkeypatch):
                         [(p["url"], p["status"]) for p in PAGES])
         con.executemany("INSERT INTO links(crawl_id,src,dst,anchor,placement,nofollow) VALUES (2,?,?,?,?,0)",
                         [(l["src"], l["dst"], l["anchor"], l["placement"]) for l in LINKS])
-        con.executemany("INSERT INTO suggestions(plan_id,src,dst) VALUES (1,?,?)", [(s["src"], s["dst"]) for s in SUG])
+        con.executemany("INSERT INTO suggestions(plan_id,src,dst,anchor) VALUES (1,?,?,?)",
+                        [(s["src"], s["dst"], s["anchor"]) for s in SUG] + [(U("/"), U("/d"), "different")])
         con.commit()
     with TestClient(main.app) as c:
         r = c.post("/api/plan/1/check")
         assert r.status_code == 200
         d = r.json()
         assert d["checked_crawl_id"] == 2 and d["counts"]["done"] == 1 and d["counts"]["gone"] == 2
-        assert d["pct_done"] == 20.0 and any("not configured" in n for n in d["notes"])
+        assert d["counts"]["wrong anchor"] == 1
+        w = [s for s in d["suggestions"] if s["status"] == "wrong anchor"][0]
+        assert w["planned_anchor"] == "different" and w["live_anchors"] == ["a"] and w["anchor_data"] is True
+        assert d["pct_done"] == 16.7 and any("not configured" in n for n in d["notes"])
         done = [s for s in d["suggestions"] if s["status"] == "done"][0]
         assert done["done_at"] == "2026-02-01T10:00:00" and done["done_crawl_id"] == 2
         assert c.post("/api/plan/9/check").status_code == 404
