@@ -29,18 +29,47 @@ def _weights(raw: str) -> dict[str, float]:
 # Business priority per product line (bridal first, then MOB). Multiplies opportunity.
 LINE_WEIGHTS = {"bridal": 1.0, "mob": 0.6, "bridesmaids": 0.4, "general": 0.5, "accessories": 0.2,
                 **_weights(os.environ.get("LINE_WEIGHTS", ""))}
-# Discontinued ranges (last stock only, can't reorder): still linkable while unsold; links to them are
-# marked temporary and their traffic is routed to live ranges.
-# Comma-separated path globs.
-DISCONTINUED = tuple(p.strip() for p in os.environ.get(
-    "DISCONTINUED", "/collections/mother-of-the-bride/jacques-vert,/dresses/jacques-vert-*,"
-    "/collections/bridal/sophia-tolli,/dresses/sophia-tolli-*,"
-    "/collections/bridal/disney-fairytale-weddings,/dresses/disney-fairytale-weddings-*").split(",") if p.strip())
+# Last stock (discontinued, off the peg): detected from the site by last_stock() -- every dress on a
+# /collections/<line>/ready-to-wear page, plus any range whose listed dresses are all on one. Still
+# linkable while unsold; the plan marks links to them temporary. DISCONTINUED (comma-separated path
+# globs) adds pages by hand.
+DISCONTINUED = tuple(p.strip() for p in os.environ.get("DISCONTINUED", "").split(",") if p.strip())
+RTW_SLUG = "ready-to-wear"
+RANGE_PREFIX_SHARE = 0.5   # a facet is a designer range if this share of its dresses start with its slug
 
 
 def is_discontinued(path: str) -> bool:
+    """Hand-listed (DISCONTINUED env) only; last_stock() covers what the site itself says."""
     path = path.rstrip("/") or "/"
     return any(fnmatchcase(path, d.rstrip("/") or "/") for d in DISCONTINUED)
+
+
+def last_stock(links: list[dict]) -> dict:
+    """{"pages": set of last-stock URLs (trailing slash trimmed), "ranges": {range url: (rtw, total)}}.
+
+    Uses contextual-ish links (main/body) from collection pages to /dresses/ pages."""
+    listed: dict[str, set] = defaultdict(set)
+    for l in links:
+        src, dst = l["src"].rstrip("/"), l["dst"].rstrip("/")
+        if "/collections/" in src and "/dresses/" in dst and l["placement"] in ("main", "body"):
+            listed[src].add(dst)
+    rtw = set().union(*(d for s, d in listed.items() if s.rsplit("/", 1)[1] == RTW_SLUG)) if listed else set()
+    pages, ranges = set(rtw), {}
+    for src, dresses in listed.items():
+        parts = _path(src).strip("/").split("/")
+        if len(parts) != 3 or parts[2] == RTW_SLUG:
+            continue
+        slug = parts[2]
+        own = sum(1 for d in dresses if _path(d).split("/")[-1].startswith(slug + "-"))
+        if own < RANGE_PREFIX_SHARE * len(dresses):
+            continue  # colour or price facet, not a designer range
+        n = len(dresses & rtw)
+        ranges[src] = (n, len(dresses))
+        if dresses and n == len(dresses):
+            pages.add(src)
+    return {"pages": pages, "ranges": ranges}
+
+
 COLLECTION_LINE = {"bridal": "bridal", "bridesmaids": "bridesmaids", "mother-of-the-bride": "mob",
                    "accessories": "accessories"}
 LINE_ROOT = {"bridal": "/collections/bridal", "bridesmaids": "/collections/bridesmaids",
@@ -248,6 +277,7 @@ def strength(pages: list[dict], links: list[dict], gsc_pages: list[dict], gsc_ro
     position}. GSC URLs must already be in the crawl's URL form."""
     ok = [p for p in pages if is_html_ok(p)]
     by_key = {_key(p["url"]): p for p in ok}
+    stock = last_stock(links)
     ctx = contextual_links(pages, links)
     wide = sitewide_links(pages, links)
 
@@ -303,7 +333,9 @@ def strength(pages: list[dict], links: list[dict], gsc_pages: list[dict], gsc_ro
             "raw_opportunity": round(potential / (1 + s / 10), 2) if g else 0.0,
         })
         r = rows[-1]
-        r["discontinued"] = is_discontinued(_path(u))
+        r["discontinued"] = u.rstrip("/") in stock["pages"] or is_discontinued(_path(u))
+        if u.rstrip("/") in stock["ranges"]:
+            r["range_rtw"] = stock["ranges"][u.rstrip("/")]
         # Discontinued = last stock: still a valid target while unsold; the label lets the plan
         # treat its links as temporary and send its traffic on to live ranges once sold.
         r["opportunity"] = round(r["raw_opportunity"] * LINE_WEIGHTS.get(r["line"], 1.0), 2)

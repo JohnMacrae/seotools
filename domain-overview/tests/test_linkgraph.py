@@ -120,21 +120,37 @@ def test_intent_factor_discounts_navigational_mismatch():
     assert uplift(1000, 40, 7) == 1000 * (0.11 - 0.04)
 
 
-def test_line_weight_and_discontinued():
-    from app.linkgraph import is_discontinued, LINE_WEIGHTS
-    assert is_discontinued("/collections/mother-of-the-bride/jacques-vert/")
-    assert is_discontinued("/dresses/jacques-vert-jv-ebony")
-    assert is_discontinued("/dresses/disney-fairytale-weddings-by-allure-ariel-2021-zip-back")
-    assert is_discontinued("/collections/bridal/sophia-tolli") and is_discontinued("/dresses/sophia-tolli-elsa-y3145")
-    assert not is_discontinued("/collections/mother-of-the-bride/john-charles")
-    assert not is_discontinued("/dresses/john-charles-65432")
+def test_line_weights_order():
+    from app.linkgraph import LINE_WEIGHTS
     assert LINE_WEIGHTS["bridal"] > LINE_WEIGHTS["mob"] > LINE_WEIGHTS["bridesmaids"]
+
+
+def test_last_stock_detected_from_ready_to_wear():
+    from app.linkgraph import last_stock
+    C = "/collections/bridal/"
+    L = [link(C + "ready-to-wear", "/dresses/sophia-tolli-anya"), link(C + "ready-to-wear", "/dresses/sophia-tolli-rio"),
+         link(C + "ready-to-wear", "/dresses/sincerity-kelly"),
+         link(C + "sophia-tolli", "/dresses/sophia-tolli-anya"), link(C + "sophia-tolli", "/dresses/sophia-tolli-rio"),
+         link(C + "sincerity", "/dresses/sincerity-kelly"), link(C + "sincerity", "/dresses/sincerity-ava"),
+         # colour facet: all ready-to-wear but not a designer range
+         link(C + "under-500", "/dresses/sincerity-kelly"),
+         # a nav link to a dress doesn't count as listed
+         link(C + "sincerity", "/dresses/mori-lee-x", placement="nav")]
+    s = last_stock(L)
+    assert U(C + "sophia-tolli") in s["pages"]
+    assert U(C + "sincerity") not in s["pages"] and s["ranges"][U(C + "sincerity")] == (1, 2)
+    assert U(C + "under-500") not in s["pages"] and U(C + "under-500") not in s["ranges"]
+    assert {U("/dresses/sophia-tolli-anya"), U("/dresses/sincerity-kelly")} <= s["pages"]
+    assert U("/dresses/sincerity-ava") not in s["pages"]
 
 
 def test_discontinued_still_gets_opportunity():
     from app.linkgraph import strength
-    pages = [page("/"), page("/collections/bridal/sophia-tolli")]
-    links = [link("/", "/collections/bridal/sophia-tolli")]
+    pages = [page("/"), page("/collections/bridal/sophia-tolli"), page("/collections/bridal/ready-to-wear"),
+             page("/dresses/sophia-tolli-anya")]
+    links = [link("/", "/collections/bridal/sophia-tolli"),
+             link("/collections/bridal/sophia-tolli", "/dresses/sophia-tolli-anya"),
+             link("/collections/bridal/ready-to-wear", "/dresses/sophia-tolli-anya")]
     gp = [dict(page=U("/collections/bridal/sophia-tolli"), clicks=5, impressions=500, ctr=.01, position=9.0)]
     gr = [dict(page=U("/collections/bridal/sophia-tolli"), query="sophia tolli", clicks=5, impressions=500, ctr=.01, position=9.0)]
     st = next(p for p in strength(pages, links, gp, gr)["pages"] if "tolli" in p["url"])
