@@ -6,6 +6,7 @@ Data used (DataForSEO):
 - Labs domain_intersection (intersections=false) -> keywords the competitor ranks for and we don't (content gap)
 - Backlinks summary                              -> domain-level authority for every site
 - Backlinks domain_intersection                  -> referring domains linking to competitors but not us (link gap)
+- Backlinks backlinks (one_per_domain)           -> the page each gap domain links from, per competitor
 - On-Page instant_pages                          -> homepage on-page audit for every site
 """
 from __future__ import annotations
@@ -293,7 +294,51 @@ async def _linkgap(c, domain: str, competitors: list[str]) -> tuple[list, float]
         })
     rows = [r for r in rows if r["spam_score"] < 50]
     rows.sort(key=lambda r: (-r["n"], -r["rank"]))
+    cost += await _linkgap_pages(c, rows, competitors)
     return rows, cost
+
+
+async def _linkgap_pages(c, rows: list, competitors: list[str]) -> float:
+    """Add row["pages"] = {competitor: {url_from, url_to, anchor, dofollow}} for each gap domain.
+
+    Probe-verified: DataForSEO's domain_from carries "www." when the site uses it (e.g. "www.weddingwire.com"),
+    so both d and "www."+d are requested; the ["domain_from","in",[...]] filter form works, a comma-string does not.
+    A failed call never fails the link gap; those pages are just missing.
+    """
+    calls = []  # (comp, coroutine)
+    for comp in competitors:
+        values = []
+        for r in rows:
+            d = r["domain"]
+            if d and comp in r["links_to"]:
+                values.append(d)
+                if not d.startswith("www."):
+                    values.append("www." + d)
+        for i in range(0, len(values), 200):
+            calls.append((comp, dfs.post_path(c, "backlinks/backlinks/live", {
+                "target": comp, "mode": "one_per_domain", "include_subdomains": True,
+                "exclude_internal_backlinks": True, "limit": 1000,
+                "filters": ["domain_from", "in", values[i:i + 200]],
+            }, mock_name="compare_linkgap_pages")))
+    out = await asyncio.gather(*(co for _, co in calls), return_exceptions=True)
+    found: dict[tuple[str, str], dict] = {}
+    cost = 0.0
+    for (comp, _), res in zip(calls, out):
+        if isinstance(res, BaseException):
+            continue
+        r, c_ = res
+        cost += c_
+        for it in (r or {}).get("items") or []:
+            df = re.sub(r"^www\.", "", it.get("domain_from") or "")
+            if df:
+                found.setdefault((comp, df), {
+                    "url_from": it.get("url_from"), "url_to": it.get("url_to"),
+                    "anchor": it.get("anchor"), "dofollow": it.get("dofollow"),
+                })
+    for r in rows:
+        d = re.sub(r"^www\.", "", r["domain"] or "")
+        r["pages"] = {comp: found[(comp, d)] for comp in r["links_to"] if (comp, d) in found}
+    return cost
 
 
 ONPAGE_CHECKS = {

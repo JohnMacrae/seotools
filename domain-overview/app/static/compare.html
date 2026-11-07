@@ -227,9 +227,16 @@ function missingTable(rows) {
 }
 function linkgapTable() {
   if (!S.linkgap.length) return `<div class="sub">No link-gap domains found.</div>`;
-  return `<table><tr><th>Referring site</th><th>Links to</th><th class="num">Site rank</th><th class="num">Spam score</th></tr>
+  const short = u => esc((u || "").replace(/^https?:\/\/(www\.)?/, ""));
+  const pageCell = r => r.links_to.map(c => {
+    const p = (r.pages || {})[c];
+    if (!p) return `<div class="sub">${esc(c)}: —</div>`;
+    return `<div><a href="${esc(p.url_from)}" target="_blank" rel="noopener">${short(p.url_from)}</a>
+      <span class="sub">→ ${short(p.url_to)}${p.anchor ? ` · “${esc(p.anchor)}”` : ""}${p.dofollow === false ? " · nofollow" : ""}</span></div>`;
+  }).join("");
+  return `<table><tr><th>Referring site</th><th>Links to</th><th>Linking page</th><th class="num">Site rank</th><th class="num">Spam score</th></tr>
     ${S.linkgap.map(r => `<tr><td><a href="https://${esc(r.domain)}" target="_blank" rel="noopener">${esc(r.domain)}</a></td>
-      <td>${r.links_to.map(esc).join(", ")}</td><td class="num">${fmt(r.rank)}</td><td class="num">${r.spam_score}%</td></tr>`).join("")}</table>`;
+      <td>${r.links_to.map(esc).join(", ")}</td><td class="wrap">${pageCell(r)}</td><td class="num">${fmt(r.rank)}</td><td class="num">${r.spam_score}%</td></tr>`).join("")}</table>`;
 }
 
 function apiQuery(p, refresh) {
