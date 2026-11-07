@@ -34,7 +34,8 @@ LINE_WEIGHTS = {"bridal": 1.0, "mob": 0.6, "bridesmaids": 0.4, "general": 0.5, "
 # Comma-separated path globs.
 DISCONTINUED = tuple(p.strip() for p in os.environ.get(
     "DISCONTINUED", "/collections/mother-of-the-bride/jacques-vert,/dresses/jacques-vert-*,"
-    "/collections/bridal/sophia-tolli,/dresses/sophia-tolli-*").split(",") if p.strip())
+    "/collections/bridal/sophia-tolli,/dresses/sophia-tolli-*,"
+    "/collections/bridal/disney-fairytale-weddings,/dresses/disney-fairytale-weddings-*").split(",") if p.strip())
 
 
 def is_discontinued(path: str) -> bool:
