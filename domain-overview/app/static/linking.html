@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Internal Linking</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f6fde; --good: #1f9d55; --bad: #d64545; --warn: #e3742f; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; margin-bottom: 10px; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #fff; color: var(--ink); }
+  input { width: 230px; font-weight: 600; }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .grid { display: grid; gap: 16px; }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .two { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; min-width: 0; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .big { font-size: 26px; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--card); white-space: nowrap; }
+  table.sortable th { cursor: pointer; }
+  table.sortable th[data-dir="asc"]::after { content: " ▲"; }
+  table.sortable th[data-dir="desc"]::after { content: " ▼"; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { max-height: 520px; overflow: auto; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .err { background: #fdeaea; color: #8a1f1f; border: 1px solid #f3c2c2; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .wrap { word-break: break-word; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tabs button { background: #fff; color: var(--muted); border-color: var(--line); }
+  .tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .bar { background: #dbe6fb; height: 14px; border-radius: 3px; min-width: 2px; }
+  .bad { color: var(--bad); } .good { color: var(--good); }
+  details { margin-bottom: 12px; } summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+  summary .sub { display: inline; margin-left: 8px; font-weight: 400; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking" class="on">Internal linking</a></nav></div>
+  <form id="f">
+    <input id="domain" name="domain" value="serenitybrides.com" placeholder="Your domain" required>
+    <button id="go">Crawl now</button>
+  </form>
+</header>
+<main id="app"></main>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const path = u => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u || ""; } };
+const link = u => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(path(u))}</a>` : "—";
+const TABS = ["Health", "Strength", "Topic map", "Template rules", "Link to-dos", "Pages to build", "Progress"];
+let timer = null;
+
+async function home() {
+  const rows = await fetch("api/crawls?domain=" + encodeURIComponent($("#domain").value)).then(r => r.ok ? r.json() : []);
+  $("#app").innerHTML = `<div class="card"><h2>Past crawls</h2>${rows.length ? `<table><tr><th>Domain</th><th>Started</th><th>Status</th><th class="num">Pages</th></tr>
+    ${rows.map(r => `<tr><td><a href="?crawl=${r.id}">${esc(r.domain)}</a></td><td>${esc(r.started_at.replace("T", " "))}</td>
+      <td class="${r.status === "error" ? "bad" : ""}">${esc(r.status)}${r.error ? ` — ${esc(r.error)}` : ""}</td><td class="num">${fmt(r.pages)}</td></tr>`).join("")}</table>`
+    : `<div class="sub">No crawls yet. Click "Crawl now".</div>`}</div>`;
+}
+
+async function watch(id) {
+  clearInterval(timer);
+  const tick = async () => {
+    const c = await fetch("api/crawl/" + id).then(r => r.json());
+    if (c.status === "running") {
+      $("#go").disabled = true;
+      $("#app").innerHTML = `<div class="card"><h2>Crawling ${esc(c.domain)}…</h2><div class="big">${fmt(c.pages)}</div><div class="sub">pages fetched so far</div></div>`;
+      return;
+    }
+    clearInterval(timer); $("#go").disabled = false;
+    if (c.status === "error") { $("#app").innerHTML = `<div class="err">Crawl failed: ${esc(c.error)}</div>`; return; }
+    $("#domain").value = c.domain;
+    const h = await fetch(`api/crawl/${id}/health`).then(r => r.json());
+    renderCrawl(c, h);
+  };
+  await tick();
+  if (!$("#go").disabled) return;
+  timer = setInterval(tick, 2000);
+}
+
+function renderCrawl(c, h) {
+  $("#app").innerHTML = `<div class="tabs">${TABS.map((t, i) => `<button ${i ? "disabled title=\"Coming later\"" : 'class="on"'}>${t}</button>`).join("")}</div>
+    <div class="sub" style="margin-bottom:12px">Crawl #${c.id} of ${esc(c.domain)} · ${esc(c.started_at.replace("T", " "))} · <a href="linking">all crawls</a></div>
+    <div id="tab"></div>`;
+  $("#tab").innerHTML = healthTab(h);
+}
+
+function tile(label, n, sub, bad) {
+  return `<div class="card"><h2>${label}</h2><div class="big ${bad && n ? "bad" : ""}">${fmt(n)}</div><div class="sub">${sub}</div></div>`;
+}
+
+function healthTab(h) {
+  const t = h.totals;
+  const maxDepth = Math.max(1, ...h.depth_histogram.map(d => d.pages));
+  return `
+    <div class="grid tiles">
+      ${tile("Pages", t.pages, Object.entries(t.status).map(([k, v]) => `${v} ${k}`).join(" · "))}
+      ${tile("Orphans", h.orphans.count, "In sitemap, no inlinks", true)}
+      ${tile("Broken links", h.broken_links.count, "Internal links to 4xx/5xx/failed", true)}
+      ${tile("Redirects", h.redirected_links.count, "Internal links that hit a 3xx", true)}
+      ${tile("Dead ends", h.dead_ends.count, "No outlinks in main content", true)}
+      ${tile("Non-indexable", h.non_indexable.count, "noindex or canonical elsewhere")}
+      ${tile("Depth > 3", h.deep_pages.count, "Clicks from the homepage", true)}
+    </div>
+    <div class="grid two">
+      <div class="card"><h2>Pages by section</h2><table class="sortable"><tr><th>Section</th><th class="num">Pages</th><th class="num">200 OK</th></tr>
+        ${h.sections.map(s => `<tr><td>${esc(s.section)}</td><td class="num">${fmt(s.pages)}</td><td class="num">${fmt(s.ok)}</td></tr>`).join("")}</table></div>
+      <div class="card"><h2>Click depth</h2><table><tr><th>Depth</th><th class="num">Pages</th><th style="width:55%"></th></tr>
+        ${h.depth_histogram.map(d => `<tr><td>${d.depth ?? "not linked"}</td><td class="num">${fmt(d.pages)}</td>
+          <td><div class="bar" style="width:${d.pages / maxDepth * 100}%"></div></td></tr>`).join("")}</table>
+        <div class="note">"Not linked" pages are in the sitemap but no crawled page links to them.</div></div>
+    </div>
+    ${issue("Orphan pages", h.orphans, "In the sitemap but no other page links to them.", pageTable)}
+    ${issue("Contextual orphans", h.contextual_orphans, "No link from main content or body, only from nav, header, footer or aside (or none).", pageTable)}
+    ${issue("Broken internal links", h.broken_links, "", linkTable)}
+    ${issue("Redirected internal links", h.redirected_links, "Link straight to the final URL instead.", linkTable)}
+    ${issue("Dead ends", h.dead_ends, "200 pages with no internal link in main content.", pageTable)}
+    ${issue("Non-indexable pages", h.non_indexable, "", pageTable)}
+    ${issue("Missing titles", h.missing_title, "", pageTable)}
+    ${issue("Duplicate titles", h.duplicate_titles, "", pageTable)}
+    ${issue("Missing H1", h.missing_h1, "", pageTable)}
+    ${issue("Missing meta description", h.missing_description, "", pageTable)}
+    ${issue("Pages deeper than 3 clicks", h.deep_pages, "", pageTable)}`;
+}
+
+function issue(title, b, note, render) {
+  return `<details ${b.count && b.count <= 50 ? "open" : ""}><summary>${title} <span class="sub">${fmt(b.count)}${b.count > b.rows.length ? ` (showing ${b.rows.length})` : ""}</span></summary>
+    <div class="card">${note ? `<div class="note" style="margin:0 0 8px">${note}</div>` : ""}
+    ${b.count ? `<div class="scroll">${render(b.rows)}</div>` : `<div class="sub good">None.</div>`}</div></details>`;
+}
+function pageTable(rows) {
+  const k = rows[0] || {};
+  return `<table class="sortable"><tr><th>Page</th><th>Title</th>${"reason" in k ? "<th>Reason</th>" : ""}${"depth" in k ? '<th class="num">Depth</th>' : ""}${"count" in k ? '<th class="num">Pages with title</th>' : ""}${"inlinks" in k ? '<th class="num">Inlinks</th>' : ""}</tr>
+    ${rows.map(r => `<tr><td class="wrap">${link(r.url)}</td><td>${esc(r.title)}</td>${"reason" in k ? `<td>${esc(r.reason)}${r.canonical ? ` → ${link(r.canonical)}` : ""}</td>` : ""}${"depth" in k ? `<td class="num">${r.depth}</td>` : ""}${"count" in k ? `<td class="num">${r.count}</td>` : ""}${"inlinks" in k ? `<td class="num">${r.inlinks}</td>` : ""}</tr>`).join("")}</table>`;
+}
+function linkTable(rows) {
+  const red = rows[0] && "redirect_to" in rows[0];
+  return `<table class="sortable"><tr><th>From</th><th>To</th><th>Anchor</th><th class="num">Status</th>${red ? "<th>Redirects to</th>" : ""}</tr>
+    ${rows.map(r => `<tr><td class="wrap">${link(r.src)}</td><td class="wrap">${link(r.dst)}</td><td>${esc(r.anchor)}</td><td class="num">${r.status ?? "error"}</td>${red ? `<td class="wrap">${link(r.redirect_to)}</td>` : ""}</tr>`).join("")}</table>`;
+}
+
+$("#f").onsubmit = async e => {
+  e.preventDefault();
+  $("#go").disabled = true;
+  const res = await fetch("api/crawl?domain=" + encodeURIComponent($("#domain").value), { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) { $("#go").disabled = false; $("#app").innerHTML = `<div class="err">${esc(data.detail || res.statusText)}</div>`; return; }
+  history.pushState(null, "", "?crawl=" + data.id);
+  watch(data.id);
+};
+
+function route() {
+  const id = new URLSearchParams(location.search).get("crawl");
+  if (id) watch(id); else { clearInterval(timer); $("#go").disabled = false; home(); }
+}
+window.onpopstate = route;
+route();
+
+document.addEventListener("click", e => {
+  const th = e.target.closest("table.sortable th");
+  if (!th) return;
+  const table = th.closest("table"), i = th.cellIndex, num = th.classList.contains("num");
+  const dir = th.dataset.dir ? (th.dataset.dir === "asc" ? "desc" : "asc") : (num ? "desc" : "asc");
+  table.querySelectorAll("th").forEach(h => delete h.dataset.dir);
+  th.dataset.dir = dir;
+  const key = tr => {
+    const t = tr.cells[i]?.textContent.trim() || "";
+    if (!num) return t.toLowerCase();
+    const m = t.replace(/,/g, "").match(/^-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+  };
+  const rows = [...table.rows].slice(1);
+  rows.sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x === y) return 0;
+    if (x === null || x === "") return 1;
+    if (y === null || y === "") return -1;
+    const c = num ? x - y : x.localeCompare(y);
+    return dir === "asc" ? c : -c;
+  });
+  rows.forEach(r => r.parentNode.appendChild(r));
+});
+</script>
+</body>
+</html>

@@ -29,6 +29,19 @@ Compare your domain with up to 3 competitors and see whether the gap is **on-pag
 Competitor suggestions come from your latest Domain overview of the same domain. Results are cached for `CACHE_DAYS`.
 A fresh comparison of 3 competitors makes about 15 DataForSEO calls; the cost is shown on the page.
 
+## Internal linking (`/linking`)
+
+A free, self-hosted crawler for your own site. "Crawl now" fetches the homepage and every sitemap URL (via `robots.txt`
+`Sitemap:` lines, falling back to `/sitemap.xml`), follows internal links breadth-first (4 at a time, 0.25s polite delay,
+respects `robots.txt`), and stores every page plus every internal link with its placement (nav, header, footer, aside, main
+or body). Redirects are recorded, not followed silently. Crawls are capped by `CRAWL_MAX_PAGES` (default 2000) and cost nothing.
+
+The **Health** tab shows orphans, contextual orphans (linked only from nav/footer), broken and redirected internal links,
+dead ends, non-indexable pages, title/H1/description problems, click depth and pages by section. Results are linkable with `?crawl=ID`.
+Other tabs (strength, topic map, template rules, to-dos) are placeholders for later work.
+
+Tests: `python3 -m pytest tests` (needs `pytest`, `httpx`, `fastapi`).
+
 ## Deploy on dnas
 
 ```bash
@@ -54,6 +67,7 @@ next to the snapshot and the running total is on the home page.
 - `GET /api/overview?domain=example.com&location=2826&language=en[&refresh=1][&snapshot=ID]`
 - `GET /api/history?domain=example.com&location=2826`
 - `GET /api/recent`
+- `POST /api/crawl?domain=example.com` (409 if one is running), `GET /api/crawl/ID`, `GET /api/crawls?domain=`, `GET /api/crawl/ID/health`
 - `GET /healthz`
 
 Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.

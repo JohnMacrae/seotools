@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import asyncio
 import json
 import os
 import re
@@ -13,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, dfs
+from . import compare, crawl, dfs, health
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
 CACHE_DAYS = int(os.environ.get("CACHE_DAYS", "7"))
@@ -21,12 +22,14 @@ STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="Domain Overview")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+_crawl_tasks: set[asyncio.Task] = set()  # keep refs so background crawls aren't garbage-collected
 
 
 def db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
     con.execute(
         """CREATE TABLE IF NOT EXISTS snapshots (
             id INTEGER PRIMARY KEY,
@@ -49,7 +52,58 @@ def db() -> sqlite3.Connection:
             cost REAL,
             data TEXT NOT NULL)"""
     )
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS crawls (
+            id INTEGER PRIMARY KEY,
+            domain TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            pages INTEGER DEFAULT 0,
+            error TEXT)"""
+    )
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS pages (
+            crawl_id INTEGER NOT NULL,
+            url TEXT NOT NULL,
+            status INTEGER,
+            redirect_to TEXT,
+            content_type TEXT,
+            canonical TEXT,
+            meta_robots TEXT,
+            title TEXT,
+            h1 TEXT,
+            meta_description TEXT,
+            word_count INTEGER,
+            depth INTEGER,
+            in_sitemap INTEGER,
+            external_links INTEGER,
+            text TEXT,
+            fetched_at TEXT,
+            PRIMARY KEY(crawl_id, url))"""
+    )
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS links (
+            crawl_id INTEGER NOT NULL,
+            src TEXT NOT NULL,
+            dst TEXT NOT NULL,
+            anchor TEXT,
+            placement TEXT,
+            nofollow INTEGER)"""
+    )
+    con.execute("CREATE INDEX IF NOT EXISTS ix_links_dst ON links(crawl_id, dst)")
+    con.execute("CREATE INDEX IF NOT EXISTS ix_links_src ON links(crawl_id, src)")
     return con
+
+
+@app.on_event("startup")
+def _mark_interrupted():
+    with closing(db()) as con:
+        con.execute(
+            "UPDATE crawls SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
+            (dt.datetime.utcnow().isoformat(timespec="seconds"),),
+        )
+        con.commit()
 
 
 def clean_domain(raw: str) -> str:
@@ -216,6 +270,62 @@ def comparisons():
             "SELECT id, domain, competitors, location_code, fetched_at, cost FROM comparisons ORDER BY fetched_at DESC LIMIT 30"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.get("/linking")
+def linking_page():
+    return FileResponse(STATIC / "linking.html")
+
+
+@app.post("/api/crawl")
+async def start_crawl(domain: str):
+    d = clean_domain(domain)
+    with closing(db()) as con:
+        if con.execute("SELECT 1 FROM crawls WHERE domain=? AND status='running'", (d,)).fetchone():
+            raise HTTPException(409, f"A crawl of {d} is already running")
+        cur = con.execute(
+            "INSERT INTO crawls(domain, started_at, status) VALUES (?,?,'running')",
+            (d, dt.datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        con.commit()
+        crawl_id = cur.lastrowid
+    task = asyncio.create_task(crawl.run_crawl(crawl_id, d, db))
+    _crawl_tasks.add(task)
+    task.add_done_callback(_crawl_tasks.discard)
+    return {"id": crawl_id}
+
+
+@app.get("/api/crawl/{crawl_id}")
+def get_crawl(crawl_id: int):
+    with closing(db()) as con:
+        row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Crawl not found")
+    return dict(row)
+
+
+@app.get("/api/crawls")
+def list_crawls(domain: str | None = None):
+    with closing(db()) as con:
+        if domain:
+            rows = con.execute("SELECT * FROM crawls WHERE domain=? ORDER BY id DESC LIMIT 30", (clean_domain(domain),)).fetchall()
+        else:
+            rows = con.execute("SELECT * FROM crawls ORDER BY id DESC LIMIT 30").fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/crawl/{crawl_id}/health")
+def crawl_health(crawl_id: int):
+    with closing(db()) as con:
+        crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl_id,)).fetchone()
+        if not crawl_row:
+            raise HTTPException(404, "Crawl not found")
+        pages = [dict(r) for r in con.execute(
+            "SELECT url,status,redirect_to,content_type,canonical,meta_robots,title,h1,meta_description,"
+            "word_count,depth,in_sitemap,external_links FROM pages WHERE crawl_id=?", (crawl_id,))]
+        links = [dict(r) for r in con.execute(
+            "SELECT src,dst,anchor,placement,nofollow FROM links WHERE crawl_id=?", (crawl_id,))]
+    return {"crawl": dict(crawl_row), **health.health(pages, links)}
 
 
 @app.get("/healthz")
