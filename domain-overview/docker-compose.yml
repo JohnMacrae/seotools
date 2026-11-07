@@ -8,6 +8,7 @@ services:
       - "8095:8000"
     volumes:
       - ./data:/data
+      - ../docs:/docs:ro
       - /volume1/docker/serenity/sweb-live/data/bl/ga4-service-account.json:/secrets/gsc-key.json:ro
 
   # Test runner: `docker compose run --rm tests` (not started by `up`)
@@ -17,6 +18,7 @@ services:
     working_dir: /srv
     volumes:
       - .:/srv
+      - ../docs:/docs:ro
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
     command: sh -c "pip install -q --root-user-action=ignore -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider tests"

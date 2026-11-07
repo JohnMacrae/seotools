@@ -15,9 +15,10 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, gsc, health, linkgraph, pagegap, progress
+from . import compare, crawl, dfs, gsc, health, linkgraph, pagegap, progress, targets
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
+TARGETS_DOC = Path(os.environ.get("TARGETS_DOC", "/docs/keyword-targets.md"))
 CACHE_DAYS = int(os.environ.get("CACHE_DAYS", "7"))
 STATIC = Path(__file__).parent / "static"
 
@@ -137,6 +138,7 @@ def db() -> sqlite3.Connection:
         if col not in have:
             con.execute(f"ALTER TABLE suggestions ADD COLUMN {col} {typ}")
     gsc.ensure_tables(con)
+    targets.ensure_table(con)
     return con
 
 
@@ -646,6 +648,66 @@ def check_plan(plan_id: int, crawl: int | None = None):
 def plan_progress(plan_id: int):
     with closing(db()) as con:
         return _progress(con, plan_id)
+
+
+@app.get("/targets")
+def targets_page():
+    return FileResponse(STATIC / "targets.html")
+
+
+def _target_body(body: dict, partial: bool) -> dict:
+    d = {k: body[k] for k in targets.FIELDS if k in body}
+    if not partial and not (str(d.get("path", "")).strip() and str(d.get("primary_keyword", "")).strip()):
+        raise HTTPException(400, "path and primary_keyword are required")
+    if "supporting" in d and not (isinstance(d["supporting"], list) and all(isinstance(x, str) for x in d["supporting"])):
+        raise HTTPException(400, "supporting must be a list of strings")
+    return d
+
+
+@app.get("/api/targets")
+def targets_list():
+    with closing(db()) as con:
+        return targets.list_all(con)
+
+
+@app.post("/api/targets/seed")
+def targets_seed():
+    if not TARGETS_DOC.exists():
+        raise HTTPException(404, f"{TARGETS_DOC} not found")
+    with closing(db()) as con:
+        return targets.seed(con, targets.parse_doc(TARGETS_DOC.read_text()))
+
+
+@app.get("/api/targets/{tid}")
+def targets_get(tid: int):
+    with closing(db()) as con:
+        t = targets.get(con, tid)
+    if t is None:
+        raise HTTPException(404, "No such target")
+    return t
+
+
+@app.post("/api/targets")
+def targets_create(body: dict):
+    with closing(db()) as con:
+        return targets.create(con, _target_body(body, False))
+
+
+@app.put("/api/targets/{tid}")
+def targets_update(tid: int, body: dict):
+    with closing(db()) as con:
+        t = targets.update(con, tid, _target_body(body, True))
+    if t is None:
+        raise HTTPException(404, "No such target")
+    return t
+
+
+@app.delete("/api/targets/{tid}")
+def targets_delete(tid: int):
+    with closing(db()) as con:
+        if not targets.delete(con, tid):
+            raise HTTPException(404, "No such target")
+    return {"deleted": tid}
 
 
 @app.get("/healthz")
