@@ -11,6 +11,7 @@ import re
 import httpx
 
 from . import linkgraph, linkmap, linkplan as lp, llm
+from .match import _stem_key
 
 SHORTLIST_MAX = 10
 BLURB_CHARS = 200
@@ -198,16 +199,6 @@ Find where a link to the target page fits on this page. Return:
 If no existing sentence can carry the anchor, draft ONE new sentence (max {words} words) in the page's tone that contains
 the anchor, and return {{"skip": false, "sentence": "<new sentence>", "anchor": "<anchor>", "in_text": false}}.
 If there is no natural place, return {{"skip": true, "why": "<reason>"}}."""
-
-
-def _stem(w: str) -> str:
-    if w.endswith("sses"):
-        return w[:-2]
-    return w[:-1] if w.endswith("s") and not w.endswith("ss") else w
-
-
-def _stem_key(s: str) -> tuple:
-    return tuple(sorted(_stem(w) for w in re.findall(r"[a-z0-9']+", s.lower())))
 
 
 def is_variant(anchor: str, keywords: list[str]) -> bool:

@@ -697,7 +697,7 @@ def link_map(crawl: int | None = None):
         crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl,)).fetchone()
         if not crawl_row:
             raise HTTPException(404, "Crawl not found")
-        pages, links = _crawl_data(con, crawl)
+        pages, links = _crawl_data(con, crawl, with_text=True)
         host = urlsplit(pages[0]["url"]).hostname if pages else crawl_row["domain"]
         fetch = con.execute("SELECT * FROM gsc_fetches ORDER BY id DESC LIMIT 1").fetchone()
         gp, gr = gsc.load(con, fetch["id"], host) if fetch else ([], [])

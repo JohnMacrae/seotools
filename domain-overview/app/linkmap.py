@@ -2,11 +2,11 @@
 Pure: takes target rows, crawl pages and links, plan suggestions and Search Console rows; returns dicts."""
 from __future__ import annotations
 
-import re
 from collections import Counter, defaultdict
 from urllib.parse import urlsplit
 
 from . import linkplan as lp
+from .match import _stem_key, contains_variant, first_sentence, url_has
 
 TEMPLATE_MIN_SRCS = 10    # same (dst, anchor) from this many src pages of one URL section = template link
 TEMPLATE_PLACEMENTS = ("nav", "header", "footer", "aside", "trail")
@@ -40,10 +40,6 @@ def template_pairs(links: list[dict], dst_keys: set[str]) -> set[tuple[str, str]
         if k in dst_keys and l["src"] != l["dst"]:
             srcs[(k, _a(l["anchor"]), _section(l["src"]))].add(ukey(l["src"]))
     return {(k, a) for (k, a, _s), s in srcs.items() if len(s) >= TEMPLATE_MIN_SRCS}
-
-
-def _has(anchor: str, kw: str) -> bool:
-    return bool(re.search(r"(?<!\w)" + re.escape(kw) + r"(?!\w)", anchor, re.I))
 
 
 def _wavg(rows: list[dict]) -> float | None:
@@ -86,6 +82,7 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
     entries = expand(rows, pages, S, ranges)
     tkeys = {ukey(e["target_page"]) for e in entries}
     page_status = {ukey(p["url"]): p["status"] for p in pages}
+    page_by_key = {ukey(p["url"]): p for p in pages}
     tpl = template_pairs(links, tkeys)
 
     in_links: dict[str, list[dict]] = defaultdict(list)
@@ -153,15 +150,28 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
         checks = [(c["src"], c["anchor"], 1, "contextual") for c in contextual] + \
                  [(t["_srcs"][0], t["anchor"], t["src_count"], "template") for t in template_out]
         for src, anchor, n, kind in checks:
-            if any(_has(anchor, k) for k in own):
+            # the longest keyword (any target) the anchor contains decides whose anchor it is
+            matches = [(k, x) for x in entries for k in x["keywords"] if "{" not in k and contains_variant(anchor, k)]
+            if not matches:
                 continue
-            for o in entries:
-                if o is e or o["target_page"] == e["target_page"]:
-                    continue
-                hits = [k for k in o["keywords"] if "{" not in k and _has(anchor, k)]
-                if hits:
-                    conflicts.append({"src": src, "anchor": anchor, "other_target_id": o["target_id"],
-                                      "keyword": max(hits, key=len), "kind": kind, "count": n})
+            longest = max(len(k.split()) for k, _ in matches)
+            best = [(k, x) for k, x in matches if len(k.split()) == longest]
+            if any(x["target_page"] == e["target_page"] for _, x in best):
+                continue
+            kw, o = best[0]
+            conflicts.append({"src": src, "anchor": anchor, "other_target_id": o["target_id"],
+                              "keyword": kw, "kind": kind, "count": n})
+        pg = page_by_key.get(tk)
+        missing = None
+        if pg is not None and kws:
+            prim, accept = kws[0], [kws[0]] + [k for k in kws[1:] if _stem_key(k) == _stem_key(kws[0])]
+            fields = {"title": pg.get("title"), "h1": pg.get("h1"),
+                      "first sentence": first_sentence(pg.get("text") or "")}
+            missing = [f for f, v in fields.items() if not any(contains_variant(v or "", k) for k in accept)]
+            if not any(url_has(pg["url"], k) for k in accept):
+                missing.insert(1, "url")
+            if missing:
+                flags.append("keyword missing: " + ", ".join(missing))
         if conflicts:
             flags.append("anchor conflict")
         wrong = bool(top) and top != tk
@@ -183,7 +193,7 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
             "gsc_target_page_position": _wavg(tgt_rows) if tgt_rows else None,
             "wrong_page": wrong,
             "contextual": contextual, "planned_missing": planned_missing, "template": template_out,
-            "conflicts": conflicts, "flags": flags,
+            "conflicts": conflicts, "flags": flags, "onpage_missing": missing,
             "supporting_approved": n_approved, "supporting": sup,
         })
 

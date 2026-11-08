@@ -148,3 +148,40 @@ def test_endpoint(tmp_path, monkeypatch):
             assert k in e
         assert e["crawl_status"] == "200" and len(e["contextual"]) == 1 and "needs links" in e["flags"]
         assert c.get("/api/linkmap?crawl=99").status_code == 404
+
+
+def test_ready_to_wear_anchor_not_conflict():
+    rows = ROWS + [{"id": 4, "path": "/collections/bridal/rtw", "primary_keyword": "ready to wear wedding dresses",
+                    "supporting": [], "product_line": "bridal"}]
+    e, _ = run([link("/blog/a", U("/collections/bridal/rtw"), "Ready to wear wedding dresses")], rows=rows)
+    assert e[2]["conflicts"] == [] and e[4]["conflicts"] == []  # longest keyword is the rtw target's own
+    e, _ = run([link("/blog/a", WD, "wedding dresses ready to wear")], rows=rows)
+    assert e[2]["conflicts"][0]["other_target_id"] == 4 and e[2]["conflicts"][0]["keyword"] == "ready to wear wedding dresses"
+
+
+def test_onpage_missing():
+    pg = {"url": LACE, "status": 200, "title": "Lace Wedding Dresses | X", "h1": "Our collection",
+          "text": "Browse lace wedding dress styles. More."}
+    res = lm.build(ROWS, [pg, {"url": WD, "status": 200}], [], S, set(), [], [])
+    e = {x["target_id"]: x for x in res["entries"]}
+    assert e[1]["onpage_missing"] == ["h1"] and "keyword missing: h1" in e[1]["flags"]
+    pg["h1"] = "Lace wedding dresses"
+    res = lm.build(ROWS, [pg], [], S, set(), [], [])
+    assert res["entries"][0]["onpage_missing"] == []  # /bridal/lace carries "lace wedding dresses"
+    assert not any(f.startswith("keyword missing") for f in res["entries"][0]["flags"])
+    res = lm.build(ROWS, [{"url": SINC, "status": 200}], [], S, set(), [], [])
+    assert res["entries"][0]["onpage_missing"] is None
+    assert not any(f.startswith("keyword missing") for f in res["entries"][0]["flags"])
+
+
+def test_onpage_missing_template_per_page():
+    rows = [{"id": 3, "path": "/collections/bridal/veni", "primary_keyword": "{Designer} wedding dresses",
+             "supporting": [], "product_line": "bridal"}]
+    pages = [{"url": VENI, "status": 200, "title": "Veni Wedding Dresses", "h1": "Veni wedding dresses",
+              "text": "Veni wedding dresses are lovely."},
+             {"url": SINC, "status": 200, "title": "Sincerity Wedding Dresses", "h1": "Dresses", "text": "Hello."}]
+    Sx = {u: {"url": u, "h1": h, "line": "bridal"} for u, h in ((VENI, "Veni Wedding Dresses"), (SINC, "Sincerity Wedding Dresses"))}
+    res = lm.build(rows, pages, [], Sx, {VENI, SINC}, [], [])
+    e = {x["target_page"]: x for x in res["entries"]}
+    assert e[VENI]["onpage_missing"] == []  # path /bridal/veni carries "Veni wedding dresses"
+    assert e[SINC]["onpage_missing"] == ["h1", "first sentence"]  # checked against "Sincerity wedding dresses"
