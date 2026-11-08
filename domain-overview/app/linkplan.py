@@ -226,7 +226,9 @@ async def topic_map(client, content: list[dict], colls: list[dict]) -> tuple[dic
 
 # ---------------------------------------------------------------- candidates and guardrails
 
-STORE_MIN_LINKS = 2     # links each keyword-target-store page is guaranteed in select()
+STORE_MIN_LINKS = 3     # links each normal keyword-target page is guaranteed in select()
+STORE_MIN_LINKS_TEMPLATE = 1  # per designer page (template target)
+DEFAULT_STORE_OPPORTUNITY = 500.0  # for keyword targets with no stored volume (~1,700 searches/mo equivalent)
 NEW_PAGE_BUMP = 1.25    # new pages have no history to earn an opportunity score
 
 
@@ -236,12 +238,15 @@ def store_opportunity(row: dict, line: str) -> float:
     times the line weight. E.g. 14,800/mo -> ~4,400, the order of a page with ~40k impressions at position 8."""
     months = int(os.environ.get("GSC_DAYS", "90")) / 30
     gain = linkgraph.ctr_at(linkgraph.TARGET_POS) - linkgraph.ctr_at(20)
-    opp = (row.get("volume") or 0) * months * gain * linkgraph.LINE_WEIGHTS.get(line, 1.0)
+    if (row.get("volume") or 0) > 0 and not row.get("template"):
+        opp = row["volume"] * months * gain * linkgraph.LINE_WEIGHTS.get(line, 1.0)
+    else:  # no stored volume (or a designer-template page, whose row volume is another page's): default
+        opp = DEFAULT_STORE_OPPORTUNITY * linkgraph.LINE_WEIGHTS.get(line, 1.0)
     return round(opp * (NEW_PAGE_BUMP if row.get("is_new") else 1), 2)
 
 
 def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[dict], ranges: set, last: set,
-               targets: list[dict] | None = None) -> list[dict]:
+               targets: list[dict] | None = None, supporting: list[dict] | None = None) -> list[dict]:
     """Scored (src, dst, kind) candidates before caps."""
     home = next((u for u in S if path(u) == "/"), None)
     targets_of = topics["page_targets"]
@@ -263,14 +268,13 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
                    key=lambda s: -s["opportunity"])[:MAX_TARGETS]
     # Keyword-target-store pages are boosted even with no Google data, outside the MAX_TARGETS cap.
     # Already in the GSC list: the higher of the two opportunities, not the sum.
-    by_path = {path(u).rstrip("/") or "/": u for u in S}
     store = {}
-    for r in targets or []:
-        u = by_path.get(path(r["path"]).rstrip("/") or "/")
-        if u and S[u].get("indexable") and (r.get("volume") or 0) > 0:
-            opp = store_opportunity(r, S[u]["line"])
+    for u, (r, tpl) in target_rows(targets or [], S, ranges).items():
+        if S[u].get("indexable"):
+            rr = {**r, "template": tpl}
+            opp = store_opportunity(rr, S[u]["line"])
             if u not in store or opp > store[u][0]:
-                store[u] = (opp, r)
+                store[u] = (opp, rr)
     tl = {norm(t["url"]): t for t in tlist}
     for u, (opp, r) in store.items():
         cur = tl.get(u) or S[u]
@@ -283,7 +287,8 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
                   + (f"; top query “{q.get('query')}”" if q.get("query") else ""))
         if t.get("store_row"):
             r = t["store_row"]
-            reason = (f"Keyword target: “{r['primary_keyword']}” ({r['volume']:,.0f}/mo)"
+            vol = f"{r['volume']:,.0f}/mo" if (r.get("volume") or 0) > 0 and not r.get("template") else "no stored volume"
+            reason = (f"Keyword target: “{r['primary_keyword']}” ({vol})"
                       + (", new page with no Google data yet" if r.get("is_new") and not t.get("impressions") else ""))
         srcs: dict[str, float] = {}
         for a, ts in targets_of.items():
@@ -309,6 +314,19 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
             add(s, dst, "cross_line" if cross else "boost", t["opportunity"] * rel * (1 + pr / 100), reason)
             if dst in store and cands and cands[-1]["dst"] == dst and cands[-1]["src"] == s:
                 cands[-1]["store"] = True
+                cands[-1]["store_min"] = STORE_MIN_LINKS_TEMPLATE if store[dst][1].get("template") else STORE_MIN_LINKS
+
+    # 1b. Approved supporting pages link to their target page first, with the approved anchor and sentence.
+    for r in supporting or []:
+        src, dst = norm(r["supporting_page"]), norm(r["target_page"])
+        if dst not in S:
+            continue
+        before = len(cands)
+        add(src, dst, "supporting", (tl.get(dst) or S[dst]).get("opportunity", 0) + 1,
+            f"Approved supporting page: {r.get('reason') or 'readers of this page go on to the target'}")
+        if len(cands) > before:
+            cands[-1]["approved"] = r
+            cands[-1]["store"] = dst in store
 
     # 2. Queries landing on the wrong page: link from where Google sends them to the right page.
     by_pair = defaultdict(list)
@@ -352,15 +370,20 @@ def select(cands: list[dict], S: dict) -> list[dict]:
 
     for c in sorted((c for c in cands if c["kind"] in ("route", "wrong_page")), key=lambda c: -c["score"]):
         take(c)
-    # Keyword-target-store pages get their best couple of links before the line quotas can crowd them out.
+    # Approved supporting pages come next; they count toward the target's minimum below.
+    have = Counter()
+    for c in sorted((c for c in cands if c["kind"] == "supporting"), key=lambda c: -c["score"]):
+        if take(c):
+            have[c["dst"]] += 1
+    # Keyword-target-store pages get their best links (minimum per page) before the line quotas can crowd them out.
     by_store = defaultdict(list)
     for c in cands:
         if c.get("store") and c["kind"] == "boost":
             by_store[c["dst"]].append(c)
-    for cs in by_store.values():
-        n = 0
+    for dst, cs in by_store.items():
+        n = have[dst]
         for c in sorted(cs, key=lambda c: -c["score"]):
-            if n < STORE_MIN_LINKS and take(c):
+            if n < cs[0].get("store_min", STORE_MIN_LINKS) and take(c):
                 n += 1
     boost = [c for c in cands if c["kind"] in ("boost", "cross_line")]
     by_line = defaultdict(list)
@@ -411,6 +434,21 @@ Set "skip": true (with "why") when there is no natural way to link this target f
 Prefer existing phrases. Vary anchors; don't just repeat the target's search query.
 Where a target lists "anchor must be one of", use exactly one of those phrases as the anchor and never invent another.
 Reply: {{"links": [ ... ]}}"""
+
+
+def _approved_anchor(row: dict, text: str) -> dict | None:
+    """The anchor and sentence John approved. An in-text anchor must still be on the page; else the sentence is drafted."""
+    anchor, sentence = (row.get("anchor") or "").strip(), (row.get("sentence") or "").strip()
+    if not anchor:
+        return None
+    if row.get("in_text"):
+        span = _find(text, anchor)
+        if span:
+            return {"anchor": text[span[0]:span[1]], "in_text": True, "sentence": None,
+                    "context": _context(text, span), "alt_anchor": None}
+    if sentence and _find(sentence, anchor):
+        return {"anchor": anchor, "in_text": False, "sentence": sentence, "context": None, "alt_anchor": None}
+    return None
 
 
 def _find(text: str, phrase: str) -> tuple[int, int] | None:
@@ -484,24 +522,29 @@ def target_keywords(row: dict, page: dict, template: bool = False) -> list[str]:
     return out
 
 
-def target_map(rows: list[dict], S: dict, ranges: set) -> dict[str, list[str]]:
-    """dst URL -> keywords, matching target paths to site URLs via path(). A row whose primary contains {Designer}
-    is the designer template: it also covers every designer range page (same line) without a target of its own."""
+def target_rows(rows: list[dict], S: dict, ranges: set) -> dict[str, tuple[dict, bool]]:
+    """dst URL -> (target row, is_template_page). Same matching as target_map."""
     by_path = {}
     for r in rows or []:
         by_path.setdefault(path(r["path"]).rstrip("/") or "/", r)
     out = {}
-    for u, page in S.items():
+    for u in S:
         r = by_path.get(path(u).rstrip("/") or "/")
         if r:
-            out[u] = target_keywords(r, page)
+            out[u] = (r, False)
     for r in (rows or []):
         if "{Designer}" not in r["primary_keyword"]:
             continue
         for u in ranges:
             if u in S and u not in out and S[u].get("line") == r.get("product_line"):
-                out[u] = target_keywords(r, S[u], template=True)
+                out[u] = (r, True)
     return out
+
+
+def target_map(rows: list[dict], S: dict, ranges: set) -> dict[str, list[str]]:
+    """dst URL -> keywords, matching target paths to site URLs via path(). A row whose primary contains {Designer}
+    is the designer template: it also covers every designer range page (same line) without a target of its own."""
+    return {u: target_keywords(r, S[u], template=t) for u, (r, t) in target_rows(rows, S, ranges).items()}
 
 
 def _target_anchor(kws: list[str], text: str, used: set, usage: Counter, dst: str, choice: dict | None) -> dict | None:
@@ -528,21 +571,27 @@ async def anchors_for(client, src: str, page: dict, items: list[dict], S: dict, 
     usage = usage if usage is not None else Counter()
     text = (page.get("text") or "")[:SOURCE_TEXT_CHARS]
     got, cost = {}, 0.0
-    if llm.configured():
+    asked = [c for c in items if not c.get("approved")]
+    if llm.configured() and asked:
         tl = "\n".join(
             f"- {c['dst']} | {short_name(S[c['dst']])} | line: {S[c['dst']]['line']} | searches: "
             f"{', '.join(q['query'] for q in S[c['dst']].get('top_queries', [])[:3]) or 'n/a'}"
             f"{' | last stock: ready to wear, still for sale' if S[c['dst']].get('discontinued') else ''}"
             f"{' | anchor must be one of: ' + '; '.join(tmap[c['dst']]) if c['dst'] in tmap else ''}"
-            for c in items)
+            for c in asked)
         async with sem:
             data, cost = await llm.ask_json(client, ANCHOR_SYSTEM, ANCHOR_USER.format(
                 src=src, title=page.get("title") or "", text=text, targets=tl), max_tokens=4000)
         got = {norm(l.get("dst") or ""): l for l in (data or {}).get("links", []) if isinstance(l, dict)}
     out, warn, used = [], [], set()
-    for c in sorted(items, key=lambda c: -c["score"]):
+    for c in sorted(items, key=lambda c: (not c.get("approved"), -c["score"])):
         l = got.get(c["dst"])
-        if c["dst"] in tmap:
+        if c.get("approved"):
+            v = _approved_anchor(c["approved"], text)
+            if not v or _key(v["anchor"]) in used:
+                warn.append(f"dropped approved {path(c['src'])} → {path(c['dst'])}: anchor not usable on this page")
+                continue
+        elif c["dst"] in tmap:
             v = _target_anchor(tmap[c["dst"]], text, used, usage, c["dst"], l)
             if not v:
                 warn.append(f"dropped {path(c['src'])} → {path(c['dst'])}: every target keyword already used as an anchor on this page")
@@ -576,7 +625,7 @@ async def anchors_for(client, src: str, page: dict, items: list[dict], S: dict, 
 # ---------------------------------------------------------------- entry point
 
 async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, progress=None,
-                     targets: list[dict] | None = None) -> dict:
+                     targets: list[dict] | None = None, supporting: list[dict] | None = None) -> dict:
     say = progress or (lambda m: None)
     S = {norm(p["url"]): {**p, "url": norm(p["url"])} for p in strength["pages"]}
     P = {norm(p["url"]): p for p in pages if linkgraph.is_html_ok(p)}
@@ -608,7 +657,7 @@ async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, pr
         warnings += w
 
         say("Choosing link candidates")
-        chosen = select(candidates(S, P, out_ctx, topics, strength.get("wrong_page", []), ranges, last, targets), S)
+        chosen = select(candidates(S, P, out_ctx, topics, strength.get("wrong_page", []), ranges, last, targets, supporting), S)
         by_src = defaultdict(list)
         for c_ in chosen:
             by_src[c_["src"]].append(c_)

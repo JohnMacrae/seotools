@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Keyword targets</title>
 <style>
-  :root { --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
+  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
     --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
     color-scheme: light dark; }
   @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
@@ -39,6 +39,10 @@
   .lm summary { cursor: pointer; color: var(--muted); margin: 8px 0 4px; }
   .st-done { color: #2e8b57; } .st-bad { color: var(--bad); } .st-existing { color: var(--muted); }
   th.sort { cursor: pointer; }
+  mark { background: var(--accent-bg, #fff3a8); color: var(--ink); padding: 0 2px; border-radius: 3px; }
+  .sup { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+  .sup li { margin: 6px 0; } .sup .btns { white-space: nowrap; }
+  .sup button { padding: 2px 8px; font-size: 12px; }
   code { background: var(--subtle); padding: 0 4px; border-radius: 4px; }
 </style>
 </head>
@@ -131,7 +135,8 @@ const FLAG_TIPS = {"needs links": "Fewer than 3 supporting pages link to this ta
   "anchor monotony": "More than 60% of the contextual anchors are the identical phrase.",
   "anchor conflict": "A link to this page uses another target's keyword and none of its own.",
   "wrong page ranking": "Google ranks a different page of ours for these keywords.",
-  "not in plan": "The link plan has no suggestion pointing at this target page."};
+  "not in plan": "The link plan has no suggestion pointing at this target page.",
+  "no supporting pages": "No supporting page has been approved for this target page yet."};
 const pos = p => p == null ? "n/a" : p.toFixed(1);
 const short = u => { try { const x = new URL(u); return x.pathname + x.search || "/"; } catch (e) { return u; } };
 const a = u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(short(u))}</a>`;
@@ -145,6 +150,34 @@ function lmTable(id, rows, heads, cols, cell) {
   return `<table><tr>${th}</tr>${sortRows(id, rows, cols).map(cell).join("")}</table>`;
 }
 window.lmSortBy = (id, i) => { const s = lmSort[id]; lmSort[id] = {i, d: s && s.i === i ? -s.d : 1}; renderLM(); };
+const hl = (sentence, anchor) => {
+  const t = String(sentence ?? ""), i = anchor ? t.toLowerCase().indexOf(String(anchor).toLowerCase()) : -1;
+  return i < 0 ? esc(t) : esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + anchor.length)) + "</mark>" + esc(t.slice(i + anchor.length));
+};
+window.supDecide = wrap(async (id, status) => {
+  const r = await api("POST", `/api/supporting/${id}`, {status});
+  for (const e of LM.entries) {
+    const i = e.supporting.findIndex(x => x.id === id);
+    if (i < 0) continue;
+    if (status === "rejected") e.supporting.splice(i, 1); else e.supporting[i] = r;
+    e.supporting_approved = e.supporting.filter(x => x.status === "approved").length;
+    const bridal = (e.product_line ?? "bridal") === "bridal", has = e.flags.includes("no supporting pages");
+    if (!e.supporting_approved && bridal && !has) e.flags.push("no supporting pages");
+    if (e.supporting_approved && has) e.flags = e.flags.filter(f => f !== "no supporting pages");
+  }
+  renderLM();
+});
+function supSection(e) {
+  const ap = e.supporting.filter(x => x.status === "approved"), pr = e.supporting.filter(x => x.status === "proposed");
+  const item = (x, btns) => `<li>${a(x.supporting_page)} &mdash; <span class="sub">${x.in_text ? "existing sentence" : "drafted sentence"}</span>
+    <div>${hl(x.sentence, x.anchor)}</div><div class="sub">Anchor: ${esc(x.anchor)}${x.reason ? " &middot; " + esc(x.reason) : ""}</div>
+    <span class="btns">${btns}</span></li>`;
+  const approved = ap.map(x => item(x, `<button class="ghost" onclick="supDecide(${x.id},'proposed')">Undo</button>`)).join("");
+  const proposed = pr.map(x => item(x, `<button onclick="supDecide(${x.id},'approved')">Approve</button> <button class="del" onclick="supDecide(${x.id},'rejected')">Reject</button>`)).join("");
+  return `<div class="sup"><b>Supporting pages</b> <span class="sub">(${ap.length} approved, ${pr.length} proposed)</span>
+    ${ap.length ? `<p class="sub">Approved</p><ul>${approved}</ul>` : ""}${pr.length ? `<p class="sub">Proposed</p><ul>${proposed}</ul>` : ""}
+    ${ap.length || pr.length ? "" : '<p class="sub">None yet. Run the supporting-page review.</p>'}</div>`;
+}
 function card(e) {
   const flags = e.flags.map(f => `<span class="chip" title="${esc(FLAG_TIPS[f] || "")}">${esc(f)}</span>`).join("");
   const id = "c" + e.target_page;
@@ -161,20 +194,42 @@ function card(e) {
   const conf = e.conflicts.length ? `<p class="sub"><b>Anchor conflicts:</b></p><ul class="sub">${e.conflicts.map(c =>
     `<li>${a(c.src)}: "${esc(c.anchor)}" contains "${esc(c.keyword)}" (target #${esc(c.other_target_id)})${c.count > 1 ? ` &times;${c.count}` : ""}</li>`).join("")}</ul>` : "";
   return `<div class="card lm"><h3>${esc(e.keywords.join("; "))} &rarr; ${a(e.target_page)}${flags}</h3>
-    <p class="sub">${esc(e.product_line ?? "")} &middot; crawl ${esc(e.crawl_status)} &middot; ${gscLine}</p>${ctx}${todo}${tpl}${conf}</div>`;
+    <p class="sub">${esc(e.product_line ?? "")} &middot; crawl ${esc(e.crawl_status)} &middot; ${gscLine}</p>${ctx}${todo}${tpl}${conf}${supSection(e)}</div>`;
+}
+const supBusy = () => LM.supporting_run && LM.supporting_run.status === "running";
+const supStatus = () => { const r = LM.supporting_run; if (!r) return "No review run yet.";
+  return r.status === "running" ? `Running: ${r.progress ?? ""}` : r.status === "error" ? `Last run failed: ${r.error}` : `Last run done, cost $${(r.cost ?? 0).toFixed(3)}.`; };
+let supTimer = null;
+function pollSup(id) {
+  clearTimeout(supTimer);
+  supTimer = setTimeout(wrap(async () => {
+    const r = await api("GET", `/api/supporting/run/${id}`);
+    LM.supporting_run = r;
+    if (r.status === "running") { const m = document.getElementById("supmsg"); if (m) m.textContent = supStatus(); pollSup(id); return; }
+    supTimer = null;
+    LM = await api("GET", "/api/linkmap?crawl=" + LM.crawl_id);
+    renderLM();
+  }), 2000);
 }
 function renderLM() {
   const d = LM, el = document.getElementById("lm"), s = d.summary, c = d.plan_counts;
   const stat = (n, l) => `<div class="stat"><b>${esc(n)}</b><span>${esc(l)}</span></div>`;
   const noPlan = d.plan_id == null;
   el.innerHTML = `<div class="strip">${stat(s.targets, "targets")}${stat(s.needs_links, "need links")}${stat(s.conflicts, "with conflicts")}
-    ${stat(s.wrong_page, "wrong page")}${stat(noPlan ? "no plan" : `${c.done}/${d.plan_total}`, "plan done")}</div>
+    ${stat(s.no_supporting, "no supporting pages")}${stat(s.wrong_page, "wrong page")}${stat(noPlan ? "no plan" : `${c.done}/${d.plan_total}`, "plan done")}</div>
     <p class="sub">Crawl ${esc(d.crawl_id)} &middot; plan ${esc(d.plan_id ?? "none")} (checked on crawl ${esc(d.checked_crawl_id ?? "n/a")}) &middot; Search Console ${d.gsc ? esc(d.gsc.start_date) + " to " + esc(d.gsc.end_date) : "not fetched"}</p>
+    <div class="bar"><button id="runsup"${supBusy() ? " disabled" : ""}>Run supporting-page review</button>
+      <span class="sub" id="supmsg">${esc(supStatus())}</span></div>
     ${d.entries.map(card).join("")}
     <div class="card"><details><summary>Other links (${d.other_links.length}): planned links to pages that are not target pages</summary>
     ${d.other_links.length ? `<table><tr><th${tip("From")}>From</th><th${tip("To")}>To</th><th${tip("Planned anchor")}>Planned anchor</th><th${tip("Status")}>Status</th></tr>${d.other_links.map(o =>
       `<tr><td>${a(o.src)}</td><td>${a(o.dst)}</td><td>${esc(o.planned_anchor ?? "")}</td><td class="${stCls(o.status)}">${esc(o.status)}</td></tr>`).join("")}</table>` : '<p class="sub">None.</p>'}
     </details></div>`;
+  document.getElementById("runsup").onclick = wrap(async () => {
+    const r = await api("POST", `/api/crawl/${d.crawl_id}/supporting`);
+    LM.supporting_run = {id: r.id, status: "running", progress: "Starting"}; renderLM(); pollSup(r.id);
+  });
+  if (supBusy() && !supTimer) pollSup(LM.supporting_run.id);
 }
 const showTab = lm => {
   document.getElementById("lm").hidden = !lm; document.getElementById("targets").hidden = lm;

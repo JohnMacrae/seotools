@@ -87,6 +87,16 @@ Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.
 - Ranking-change arrows compare against DataForSEO's previous absolute rank, so treat them as indicative.
 - The competitor list excludes giant sites (Amazon, Wikipedia and similar) via `exclude_top_domains`.
 
+## Supporting-page review
+
+On the `/targets` Link map tab, "Run supporting-page review" asks the model, for each phase-1 bridal keyword target (template
+targets per designer page), which indexable pages a reader would naturally go on to the target page from, then finds the
+sentence and anchor (a target keyword or close variant) on each, or drafts one sentence. Proposals are stored in
+`supporting_pages`; Approve / Reject them on the card. Re-runs only add or refresh `proposed` rows and never resurrect
+decided ones. The link plan proposes approved supporting links first. `POST /api/crawl/ID/supporting` (409 if running),
+`GET /api/supporting/run/ID` (status), `GET /api/supporting?crawl=ID&status=` (all rows), and
+`POST /api/supporting/ROW_ID` with `{"status": "approved"|"rejected"|"proposed"}` and/or edited `anchor`, `sentence`, `in_text`.
+
 ## Monthly map pack check
 
 `/mappack` checks Google (Colchester) for every stored keyword target (primary + supporting) and records our and the

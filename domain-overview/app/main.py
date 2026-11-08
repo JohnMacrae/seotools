@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, targets
+from . import compare, crawl, dfs, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, supporting, targets
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -141,13 +141,14 @@ def db() -> sqlite3.Connection:
     gsc.ensure_tables(con)
     targets.ensure_table(con)
     mappack.ensure_tables(con)
+    supporting.ensure_tables(con)
     return con
 
 
 @app.on_event("startup")
 def _mark_interrupted():
     with closing(db()) as con:
-        for table in ("crawls", "plans", "gaps", "mappack_runs"):
+        for table in ("crawls", "plans", "gaps", "mappack_runs", "supporting_runs"):
             con.execute(
                 f"UPDATE {table} SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
                 (dt.datetime.utcnow().isoformat(timespec="seconds"),),
@@ -436,7 +437,8 @@ async def _run_plan(plan_id: int, crawl_id: int):
         with closing(db()) as con:
             _row, pages, links, strength, _info = _strength(con, crawl_id, with_text=True)
             tg = targets.list_all(con)
-        plan = await linkplan.build_plan(pages, links, strength, progress=set_progress, targets=tg)
+            approved = supporting.rows(con, "approved")
+        plan = await linkplan.build_plan(pages, links, strength, progress=set_progress, targets=tg, supporting=approved)
         with closing(db()) as con:
             con.execute(
                 "UPDATE plans SET status='done', finished_at=?, progress=NULL, model=?, cost=?, data=? WHERE id=?",
@@ -690,8 +692,11 @@ def link_map(crawl: int | None = None):
         plan = con.execute("SELECT p.id FROM plans p JOIN crawls c ON c.id=p.crawl_id WHERE p.status='done' AND p.crawl_id<=? "
                            "AND c.domain=? ORDER BY p.id DESC LIMIT 1", (crawl, crawl_row["domain"])).fetchone()
         prog = _progress(con, plan["id"]) if plan else None
+        sup_rows = [r for r in supporting.rows(con) if r["status"] != "rejected"]
         result = linkmap.build(targets.list_all(con), pages, links, S, ranges, prog["suggestions"] if prog else [], gr,
-                               has_plan=bool(prog))
+                               has_plan=bool(prog), supporting=sup_rows)
+        srun = con.execute("SELECT id,crawl_id,status,progress,error,cost,finished_at FROM supporting_runs "
+                           "ORDER BY id DESC LIMIT 1").fetchone()
     ents = result["entries"]
     return {
         "crawl_id": crawl, "plan_id": prog["plan_id"] if prog else None,
@@ -700,9 +705,90 @@ def link_map(crawl: int | None = None):
         "gsc": {"fetch_id": fetch["id"], "fetched_at": fetch["fetched_at"], "start_date": fetch["start_date"],
                 "end_date": fetch["end_date"]} if fetch else None,
         "summary": {"targets": len(ents), "needs_links": sum("needs links" in e["flags"] for e in ents),
-                    "conflicts": sum(bool(e["conflicts"]) for e in ents), "wrong_page": sum(e["wrong_page"] for e in ents)},
+                    "conflicts": sum(bool(e["conflicts"]) for e in ents),
+                    "no_supporting": sum("no supporting pages" in e["flags"] for e in ents), "wrong_page": sum(e["wrong_page"] for e in ents)},
         "entries": ents, "other_links": result["other_links"],
+        "supporting_run": dict(srun) if srun else None,
     }
+
+
+async def _run_supporting(run_id: int, crawl_id: int):
+    def set_progress(msg: str):
+        with closing(db()) as con:
+            con.execute("UPDATE supporting_runs SET progress=? WHERE id=?", (str(msg), run_id))
+            con.commit()
+
+    try:
+        with closing(db()) as con:
+            _row, pages, links, strength, _info = _strength(con, crawl_id, with_text=True)
+            tg = targets.list_all(con)
+            decided = supporting.decided_pairs(con)
+        res = await supporting.run(pages, links, strength, tg, decided, progress=set_progress)
+        with closing(db()) as con:
+            stored = supporting.save(con, crawl_id, res["proposals"])
+            con.execute("UPDATE supporting_runs SET status='done', finished_at=?, progress=NULL, model=?, cost=?, data=? WHERE id=?",
+                        (_now(), res["model"], res["cost"],
+                         json.dumps({"warnings": res["warnings"], "targets": res["targets"], **stored}), run_id))
+            con.commit()
+    except Exception as e:  # noqa: BLE001
+        with closing(db()) as con:
+            con.execute("UPDATE supporting_runs SET status='error', error=?, finished_at=? WHERE id=?",
+                        (f"{type(e).__name__}: {e}"[:500], _now(), run_id))
+            con.commit()
+
+
+@app.post("/api/crawl/{crawl_id}/supporting")
+async def start_supporting(crawl_id: int):
+    with closing(db()) as con:
+        if not con.execute("SELECT 1 FROM crawls WHERE id=?", (crawl_id,)).fetchone():
+            raise HTTPException(404, "Crawl not found")
+        if con.execute("SELECT 1 FROM supporting_runs WHERE status='running'").fetchone():
+            raise HTTPException(409, "A supporting-page review is already running")
+        cur = con.execute("INSERT INTO supporting_runs(crawl_id, created_at, status, progress) VALUES (?,?,'running','Starting')",
+                          (crawl_id, _now()))
+        con.commit()
+        run_id = cur.lastrowid
+    task = asyncio.create_task(_run_supporting(run_id, crawl_id))
+    _crawl_tasks.add(task)
+    task.add_done_callback(_crawl_tasks.discard)
+    return {"id": run_id}
+
+
+@app.get("/api/supporting/run/{run_id}")
+def get_supporting_run(run_id: int):
+    with closing(db()) as con:
+        r = con.execute("SELECT * FROM supporting_runs WHERE id=?", (run_id,)).fetchone()
+        if not r:
+            raise HTTPException(404, "Run not found")
+        d = dict(r)
+        d["data"] = json.loads(d["data"]) if d["data"] else None
+        return d
+
+
+@app.get("/api/crawl/{crawl_id}/supporting-runs")
+def list_supporting_runs(crawl_id: int):
+    with closing(db()) as con:
+        return [dict(r) for r in con.execute(
+            "SELECT id,crawl_id,created_at,finished_at,status,progress,error,model,cost FROM supporting_runs "
+            "WHERE crawl_id=? ORDER BY id DESC", (crawl_id,))]
+
+
+@app.get("/api/supporting")
+def list_supporting(crawl: int | None = None, status: str | None = None):
+    """Every stored row (all fields), optionally filtered by the crawl it was proposed on and by status."""
+    with closing(db()) as con:
+        return supporting.rows(con, status, crawl)
+
+
+@app.post("/api/supporting/{row_id}")
+def decide_supporting(row_id: int, body: dict):
+    with closing(db()) as con:
+        row, err = supporting.update(con, row_id, body or {})
+    if row is None:
+        raise HTTPException(404, "Row not found")
+    if err:
+        raise HTTPException(400, err)
+    return row
 
 
 @app.get("/targets")

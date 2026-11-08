@@ -79,7 +79,8 @@ def expand(rows: list[dict], pages: list[dict], S: dict, ranges: set) -> list[di
 
 
 def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, ranges: set,
-          suggestions: list[dict], gsc_rows: list[dict], has_plan: bool = True) -> dict:
+          suggestions: list[dict], gsc_rows: list[dict], has_plan: bool = True,
+          supporting: list[dict] | None = None) -> dict:
     """rows: keyword targets (targets.list_all). suggestions: plan progress rows (src, dst, planned_anchor, status).
     gsc_rows: {page, query, impressions, position}."""
     entries = expand(rows, pages, S, ranges)
@@ -96,6 +97,11 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
     for s in suggestions:
         sugg_by_dst[ukey(s["dst"])].append(s)
         sugg_by_pair[(ukey(s["src"]), ukey(s["dst"]))] = s
+
+    sup_by_dst: dict[str, list[dict]] = defaultdict(list)
+    for r in supporting or []:
+        if r["status"] != "rejected":
+            sup_by_dst[ukey(r["target_page"])].append(r)
 
     gsc_by_q: dict[str, list[dict]] = defaultdict(list)
     for g in gsc_rows:
@@ -163,6 +169,10 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
             flags.append("wrong page ranking")
         if has_plan and not sugg_by_dst.get(tk):
             flags.append("not in plan")
+        sup = sup_by_dst.get(tk, [])
+        n_approved = sum(r["status"] == "approved" for r in sup)
+        if not n_approved and (e.get("product_line") or "bridal") == "bridal":
+            flags.append("no supporting pages")
         for t in template_out:
             del t["_srcs"]
         out.append({
@@ -174,6 +184,7 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
             "wrong_page": wrong,
             "contextual": contextual, "planned_missing": planned_missing, "template": template_out,
             "conflicts": conflicts, "flags": flags,
+            "supporting_approved": n_approved, "supporting": sup,
         })
 
     other = []
