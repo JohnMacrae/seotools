@@ -179,6 +179,16 @@ def is_covered(kw: str, gsc_agg: dict, page_words: list[set]) -> bool:
     return bool(w) and any(w <= pw for pw in page_words)
 
 
+def apply_target_volumes(cands: dict[str, dict], tvol: dict | None) -> None:
+    """volume_source: targets (doc figure, overrides) / labs (Labs volume) / gsc (impressions/3 proxy, volume stays None)."""
+    for kw, c in cands.items():
+        v = (tvol or {}).get(kw.lower())
+        if v is not None:
+            c["volume"], c["volume_source"] = v, "targets"
+        else:
+            c["volume_source"] = "labs" if c.get("volume") is not None else "gsc"
+
+
 def monthly(c: dict) -> tuple[float, bool]:
     """(monthly volume, is_proxy). DFS volume when known, else GSC impressions over the window / 3."""
     if c.get("volume") is not None:
@@ -308,7 +318,9 @@ def finish(page: dict, byk: dict[str, dict]) -> dict:
     if not page.get("why"):
         page = {**page, "why": f"{len(cs)} keyword{'s' if len(cs) > 1 else ''}, about {volume:,} searches a month"
                                f"{' (estimated from Search Console)' if any(p for _, p in vols) else ''}"}
-    return {**page, "volume": volume, "volume_is_proxy": any(p for _, p in vols), "kd": kd, "sources": sources,
+    srcs = {c.get("volume_source") or "labs" for c in cs}
+    vsrc = "gsc" if "gsc" in srcs else "targets" if srcs == {"targets"} else "mixed" if "targets" in srcs else "labs"
+    return {**page, "volume": volume, "volume_source": vsrc, "volume_is_proxy": any(p for _, p in vols), "kd": kd, "sources": sources,
             "score": round(score, 1),
             "gsc": {"impressions": round(sum(c["impressions"] or 0 for c in gsc)),
                     "best_position": min((c["position"] for c in gsc if c.get("position") is not None), default=None)},
@@ -318,7 +330,7 @@ def finish(page: dict, byk: dict[str, dict]) -> dict:
 # ---------------------------------------------------------------- entry point
 
 async def build_gaps(pages: list[dict], strength: dict, gsc_rows: list[dict], comparison: dict | None,
-                     progress=None) -> dict:
+                     progress=None, tvol: dict | None = None) -> dict:
     say = progress or (lambda m: None)
     S = {norm(p["url"]): {**p, "url": norm(p["url"])} for p in strength["pages"]}
     ok_pages = [p for p in pages if p.get("status") == 200]
@@ -338,6 +350,7 @@ async def build_gaps(pages: list[dict], strength: dict, gsc_rows: list[dict], co
     idea_c, c = await idea_candidates(seeds(), warnings)
     cost += c
     merged = merge(gsc_c, comp_c, idea_c)
+    apply_target_volumes(merged, tvol)
     counts = {"gsc": len(gsc_c), "competitor": len(comp_c), "ideas": len(idea_c)}
 
     remaining = {}

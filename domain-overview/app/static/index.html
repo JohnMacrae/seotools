@@ -88,18 +88,18 @@ const short = u => { try { const x = new URL(u); return x.pathname + x.search ||
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let charts = [], state = null;
 const TIPS = {
-  "Keyword": "Search term the domain ranks for (DFS).",
-  "Pos": "Google organic position (DFS). Arrow = change since DFS's previous check.",
-  "Volume": "Average monthly Google searches (DFS).",
-  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DFS).",
-  "CPC": "Average Google Ads cost per click (DFS).",
-  "kw|Traffic": "Estimated monthly visits from this keyword = volume × CTR at this position (DFS).",
-  "URL": "The page that ranks (DFS).",
-  "Domain": "Site competing for the same keywords (DFS).",
-  "Common kw": "Keywords both sites rank for (DFS).",
-  "Avg pos": "Competitor's average position on the shared keywords (DFS).",
-  "Keywords": "Total keywords this site/page ranks for (DFS).",
-  "Traffic": "Estimated monthly organic visits (DFS)."
+  "Keyword": "Search term the domain ranks for (DataForSEO Labs estimate).",
+  "Pos": "Google organic position (DataForSEO Labs estimate). Arrow = change since DFS's previous check.",
+  "Volume": "Average monthly Google searches (DataForSEO Labs estimate).",
+  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DataForSEO Labs estimate).",
+  "CPC": "Average Google Ads cost per click (DataForSEO Labs estimate).",
+  "kw|Traffic": "Estimated monthly visits from this keyword = volume × CTR at this position (DataForSEO Labs estimate).",
+  "URL": "The page that ranks (DataForSEO Labs estimate).",
+  "Domain": "Site competing for the same keywords (DataForSEO Labs estimate).",
+  "Common kw": "Keywords both sites rank for (DataForSEO Labs estimate).",
+  "Avg pos": "Competitor's average position on the shared keywords (DataForSEO Labs estimate).",
+  "Keywords": "Total keywords this site/page ranks for (DataForSEO Labs estimate).",
+  "Traffic": "Estimated monthly organic visits (DataForSEO Labs estimate)."
 };
 const tip = (id, l) => { const t = TIPS[id + "|" + l] || TIPS[l]; return t ? ` title="${esc(t)}"` : ""; };
 
@@ -132,6 +132,7 @@ async function load(domain, loc, opts = {}) {
 function render(d, hist) {
   charts.forEach(c => c.destroy()); charts = [];
   const h = d.headline;
+  const src = `<div class="sub">Source: DataForSEO Labs estimate, as of ${esc((d.fetched_at || "").slice(0, 10))}</div>`;
   const snapOpts = hist.map(s => `<option value="${s.id}" ${s.id === d.snapshot_id ? "selected" : ""}>${s.fetched_at.replace("T", " ")} · ${fmt(s.headline.traffic)} traffic</option>`).join("");
   $("#app").innerHTML = `
     ${d.errors?.length ? `<div class="err">Some panels failed: ${esc(d.errors.join("; "))}</div>` : ""}
@@ -143,38 +144,39 @@ function render(d, hist) {
       <a href="./">All lookups</a>
     </div>
 
+    ${/^(www\.)?serenitybrides\.com$/i.test(d.domain) ? `<div class="err" style="background:var(--accent-bg);border-color:var(--accent-soft);color:var(--ink)">Positions here are DataForSEO Labs estimates. For our own rankings use Search Console (<a href="linking">Internal linking → Strength</a>, <a href="targets">Keyword targets</a>).</div>` : ""}
     <div class="grid tiles">
       <div class="card"><h2>Organic keywords</h2><div class="big">${fmt(h.keywords)}</div>
         <div class="moves"><span class="up">+${fmt(h.new)} new</span><span class="up">▲ ${fmt(h.up)}</span><span class="down">▼ ${fmt(h.down)}</span><span class="down">${fmt(h.lost)} lost</span></div></div>
       <div class="card"><h2>Organic traffic / mo</h2><div class="big">${fmt(h.traffic)}</div><div class="sub">Estimated visits from ranked keywords</div></div>
-      <div class="card"><h2>Traffic value</h2><div class="big">${money(h.traffic_value)}</div><div class="sub">What this traffic would cost in Google Ads</div></div>
+      <div class="card"><h2>Traffic value</h2><div class="big">${money(h.traffic_value)}</div><div class="sub">Estimated: what this traffic would cost in Google Ads</div></div>
       <div class="card"><h2>Competitors found</h2><div class="big">${fmt(d.competitors.length)}</div><div class="sub">Top by shared keywords</div></div>
     </div>
 
     <div class="grid two" style="margin-top:16px">
       <div class="card"><h2>Trend (12 months)
         <span class="seg" id="tsel"><button data-k="traffic" class="on">Traffic</button><button data-k="keywords">Keywords</button><button data-k="top10">Top 10</button></span></h2>
-        <div class="chart"><canvas id="trend"></canvas></div></div>
-      <div class="card"><h2>Ranking positions</h2><div class="chart"><canvas id="pos"></canvas></div></div>
+        <div class="chart"><canvas id="trend"></canvas></div>${src}</div>
+      <div class="card"><h2>Ranking positions</h2><div class="chart"><canvas id="pos"></canvas></div>${src}</div>
     </div>
 
     <div class="card" style="margin-top:16px"><h2>Top organic keywords (${d.keywords.length})
       <input class="filter" id="kwf" placeholder="Filter keywords…"></h2>
       <div class="scroll">${table("kw", [
         ["keyword","Keyword"],["position","Pos","num"],["volume","Volume","num"],["kd","KD","num"],["cpc","CPC","num"],["traffic","Traffic","num"],["url","URL"]
-      ], d.keywords)}</div></div>
+      ], d.keywords)}</div>${src}</div>
 
     <div class="grid halves" style="margin-top:16px">
       <div class="card"><h2>Main organic competitors</h2>
         <div class="scroll">${table("comp", [
           ["domain","Domain"],["common","Common kw","num"],["avg_position","Avg pos","num"],["keywords","Keywords","num"],["traffic","Traffic","num"]
-        ], d.competitors)}</div></div>
+        ], d.competitors)}</div>${src}</div>
       <div class="card"><h2>Competitive positioning <span class="sub" style="text-transform:none;letter-spacing:0">bubble = common keywords</span></h2>
         <div class="chart" style="height:340px"><canvas id="map"></canvas></div></div>
     </div>
 
     <div class="card" style="margin-top:16px"><h2>Top pages</h2>
-      <div class="scroll">${table("pages", [["url","URL"],["keywords","Keywords","num"],["traffic","Traffic","num"]], d.pages)}</div></div>
+      <div class="scroll">${table("pages", [["url","URL"],["keywords","Keywords","num"],["traffic","Traffic","num"]], d.pages)}</div>${src}</div>
   `;
 
   $("#snap").onchange = e => load(d.domain, d.location_code, {snapshot: e.target.value});

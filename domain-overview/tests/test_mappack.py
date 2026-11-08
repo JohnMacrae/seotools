@@ -25,7 +25,7 @@ def test_organic_domain_from_breadcrumb_not_google_redirect():
 def test_organic_unwraps_google_url_q_and_ignores_date_breadcrumb():
     p = mappack.parse_organic({"url": "https://www.google.com/url?q=https%3A%2F%2Fwww.a.co.uk%2Fx%2Fy&sa=U", "breadcrumb": "1 week ago"})
     assert (p["domain"], p["url"], p["url_exact"]) == ("a.co.uk", "https://www.a.co.uk/x/y", True)
-    assert mappack.parse_organic({"url": G, "breadcrumb": "9 likes  ·  5 months ago", "website_name": "Facebook"})["domain"] is None
+    assert mappack.parse_organic({"url": G, "breadcrumb": "9 likes  ·  5 months ago", "website_name": "Facebook"})["domain"] == "facebook.com"
     assert mappack.parse_organic({"url": G, "breadcrumb": "https://theweddingshop.uk"})["url"] == "https://theweddingshop.uk/"
 
 
@@ -117,3 +117,23 @@ def test_api(tmp_path, monkeypatch):
     assert c.get("/api/mappack/runs").json()[0]["summary"]["wins"] == 1
     assert c.get("/api/mappack/runs/99").status_code == 404
     assert c.get("/mappack").status_code == 200
+
+
+def test_detail_includes_gsc_position(tmp_path, monkeypatch):
+    from app import gsc
+    monkeypatch.setattr(main, "DB_PATH", tmp_path / "g.db")
+    con = main.db()
+    gsc.ensure_tables(con)
+    mappack.create_run(con, "2026-11-01T00:00:00", 2)
+    for kw in ("Bridal Shop", "no gsc kw"):
+        con.execute("INSERT INTO mappack_results(run_id,keyword) VALUES (1,?)", (kw,))
+    con.execute("INSERT INTO gsc_fetches(id,site,fetched_at,start_date,end_date,rows) VALUES (1,?,?,?,?,?)",
+                (gsc.SITE_URL, "2026-11-02", "2026-08-01", "2026-10-30", 2))
+    con.executemany("INSERT INTO gsc_rows VALUES (1,?,?,?,?,?,?)",
+                    [("https://s/a", "bridal shop", 1, 100, 0.01, 4.0), ("https://s/b", "bridal shop", 0, 300, 0.0, 8.0)])
+    con.commit()
+    con.close()
+    d = TestClient(main.app).get("/api/mappack/runs/1").json()
+    pos = {r["keyword"]: r["us_gsc_pos"] for r in d["results"]}
+    assert pos == {"Bridal Shop": 7.0, "no gsc kw": None}  # (4*100 + 8*300) / 400
+    assert d["gsc"] == {"start": "2026-08-01", "end": "2026-10-30"}

@@ -221,6 +221,16 @@ def _wrap(row: sqlite3.Row, cached: bool) -> dict:
     return data
 
 
+def _cmp(row: sqlite3.Row, cached: bool) -> dict:
+    """Comparison payload; older stored comparisons get the targets-doc volumes (ADR 0002) applied on read."""
+    data = _wrap(row, cached)
+    with closing(db()) as con:
+        tvol = targets.volume_map(targets.list_all(con))
+    for k in ("shared", "missing"):
+        compare.apply_target_volumes(data.get(k) or [], tvol)
+    return data
+
+
 @app.get("/api/history")
 def history(domain: str, location: int = 2826):
     d = clean_domain(domain)
@@ -289,7 +299,7 @@ async def compare_api(
             row = con.execute("SELECT * FROM comparisons WHERE id=?", (id,)).fetchone()
             if not row:
                 raise HTTPException(404, "Comparison not found")
-            return _wrap(row, cached=True)
+            return _cmp(row, True)
         if not refresh:
             cutoff = (dt.datetime.utcnow() - dt.timedelta(days=CACHE_DAYS)).isoformat()
             row = con.execute(
@@ -298,8 +308,12 @@ async def compare_api(
                 (d, key, location, language, cutoff),
             ).fetchone()
             if row:
-                return _wrap(row, cached=True)
-    data = await compare.run(d, comps, location, language)
+                return _cmp(row, True)
+    with closing(db()) as con:
+        live = compare.load_live(con)
+        gscd = compare.load_gsc(con)
+        tvol = targets.volume_map(targets.list_all(con))
+    data = await compare.run(d, comps, location, language, live, gscd, tvol)
     if len(data["errors"]) >= 3 * len(comps) + 3:
         raise HTTPException(502, "; ".join(data["errors"]))
     now = dt.datetime.utcnow().isoformat(timespec="seconds")
@@ -310,7 +324,7 @@ async def compare_api(
         )
         con.commit()
         row = con.execute("SELECT * FROM comparisons WHERE id=?", (cur.lastrowid,)).fetchone()
-    return _wrap(row, cached=False)
+    return _cmp(row, False)
 
 
 @app.get("/api/comparisons")
@@ -517,8 +531,9 @@ async def _run_gaps(gap_id: int, crawl_id: int):
             rows = _gsc_rows(con, crawl_row, pages)
             comp = con.execute("SELECT data FROM comparisons WHERE domain=? ORDER BY fetched_at DESC LIMIT 1",
                                (crawl_row["domain"],)).fetchone()
+            tvol = targets.volume_map(targets.list_all(con))
         data = await pagegap.build_gaps(pages, strength, rows, json.loads(comp["data"]) if comp else None,
-                                        progress=set_progress)
+                                        progress=set_progress, tvol=tvol)
         with closing(db()) as con:
             con.execute("UPDATE gaps SET status='done', finished_at=?, progress=NULL, cost=?, data=? WHERE id=?",
                         (_now(), data.get("cost"), json.dumps(data), gap_id))
@@ -580,6 +595,8 @@ def _gsc_change(con, rows: list[dict]) -> str | None:
         page = gsc.normalise(r["dst"], gsc.site_host() or host) or r["dst"]
         daily = [dict(x) for x in con.execute("SELECT date,clicks,impressions,position FROM gsc_daily WHERE page=?", (page,))]
         r["gsc"] = gsc.window_stats(daily, dt.date.fromisoformat(r["done_at"][:10]), end)
+        if r["gsc"]:
+            r["gsc"]["data_end"] = end.isoformat()  # as-of of the daily data used (ADR 0002)
     return None
 
 
@@ -811,6 +828,13 @@ def targets_list():
         return targets.list_all(con)
 
 
+@app.get("/api/targets/meta")
+def targets_meta():
+    """As-of for the volumes: the targets doc's modification time."""
+    m = dt.datetime.fromtimestamp(TARGETS_DOC.stat().st_mtime, dt.timezone.utc).isoformat(timespec="seconds") if TARGETS_DOC.exists() else None
+    return {"doc": "docs/keyword-targets.md", "doc_mtime": m}
+
+
 @app.post("/api/targets/seed")
 def targets_seed():
     if not TARGETS_DOC.exists():
@@ -889,6 +913,12 @@ def mappack_runs():
 def mappack_run(run_id: int):
     with closing(db()) as con:
         r = mappack.get_run(con, run_id)
+        gscd = compare.load_gsc(con) if r else None
     if not r:
         raise HTTPException(404, "No such run")
+    rows = (gscd or {}).get("rows", {})
+    for x in r["results"]:
+        g = rows.get(x["keyword"].lower())
+        x["us_gsc_pos"] = g["position"] if g else None  # impression-weighted Search Console average (ADR 0002)
+    r["gsc"] = {"start": gscd["start"], "end": gscd["end"]} if gscd else None
     return r

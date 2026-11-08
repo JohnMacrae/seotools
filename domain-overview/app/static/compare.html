@@ -105,12 +105,12 @@ const TIPS = {
   "Backlinks": "Total links pointing at the site (DFS backlinks).",
   "Link spam score": "DFS estimate of how spammy the backlink profile is (0–100%).",
   "audit": "DFS on-page crawl of that site's homepage.",
-  "You": "Your Google position for this keyword, and the page that ranks (DFS).",
+  "You": "Your position: Search Console average (GSC), else live map-pack check, else Labs estimate — see the tag",
   "competitor": "Their Google position and ranking page (DFS).",
   "Cause": "off-page = they have ≥1.25× your domain rank or ≥2× the page's referring domains; else on-page (content/relevance).",
   "Why": "The numbers behind Cause.",
-  "Volume": "Average monthly Google searches (DFS).",
-  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DFS).",
+  "Volume": "Average monthly Google searches (DataForSEO Labs estimate).",
+  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DataForSEO Labs estimate).",
   "Their best page": "Competitor's highest-ranking page for the keyword.",
   "Referring site": "Site linking to competitors but not to you (DFS).",
   "Links to": "Which competitors it links to.",
@@ -118,6 +118,9 @@ const TIPS = {
   "Site rank": "The referring site's DFS domain rank 0–1000.",
   "Spam score": "Referring site's DFS spam score; ≥50% hidden."
 };
+const GA_TIP = "Google Ads UK monthly, from keyword targets doc";
+const volTip = rows => rows.some(r => r.volume_source === "targets") ? " title=\"Average monthly searches: Google Ads UK (GA, keyword targets doc) for keyword targets, otherwise DataForSEO Labs estimate (est.)\"" : tip("Volume");
+const volCell = r => fmt(r.volume) + (r.volume_source === "targets" ? ` <span class="sub" title="${GA_TIP}">GA</span>` : r.volume != null ? ` <span class="sub" title="DataForSEO Labs estimate">est.</span>` : "");
 const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 
 async function home() {
@@ -188,6 +191,7 @@ function render() {
     <div class="card"><h2>Keywords where they beat you (${fmt(v.losing_keywords)})
       <span><span class="seg" id="cf"><button class="on" data-c="">All</button><button data-c="on-page">On-page</button><button data-c="off-page">Off-page</button><button data-c="winning">Winning</button></span>
       <input class="filter" id="kf" placeholder="Filter…"></span></h2>
+      <div class="sub" style="margin-bottom:8px">${posLine(S)}</div>
       <div class="scroll" id="shared"></div></div>
 
     <div class="card"><h2>Content gap — they rank, you don't (${fmt(v.missing_keywords)}) <input class="filter" id="mf" placeholder="Filter…"></h2>
@@ -232,6 +236,20 @@ function onpageTable() {
     ${rows.map(([label, f]) => `<tr><td><strong>${label}</strong></td>${sites.map(s => `<td class="wrap">${s.onpage ? f(s.onpage) : (label === "Title" ? "Could not fetch" : "")}</td>`).join("")}</tr>`).join("")}</table>`;
 }
 
+function posLine(S) {
+  const g = S.gsc_positions, l = S.live_positions, bits = [];
+  if (g) bits.push(`Your positions: Search Console average, ${esc(g.start)}–${esc(g.end)} (${fmt(g.keywords)} keywords)`);
+  if (l) bits.push(g ? `theweddingshop.uk: ${fmt(l.keywords)} live from map-pack run ${esc((l.as_of || "").slice(0, 10))} (single check)`
+                     : `${fmt(l.keywords)} live from map-pack run ${esc((l.as_of || "").slice(0, 10))} (single check)`);
+  bits.push(bits.length ? "Other positions: Labs estimates" : "Positions: all are Labs estimates");
+  return bits.join(". ") + ".";
+}
+function srcTag(e) {
+  if (!e || !e.source) return "";
+  if (e.source === "gsc") { const g = S?.gsc_positions || {}; return ` <span class="sub" title="Search Console average position over ${esc(g.start || "")}–${esc(g.end || "")} (${fmt(e.gsc_impressions || 0)} impressions)">GSC</span>`; }
+  const live = e.source === "live";
+  return ` <span class="sub" title="${live ? "Live Google SERP, Colchester, " + esc(e.device || "desktop") + ", " + esc((e.live_as_of || "").slice(0, 10)) + (e.desktop_position !== undefined ? ", desktop: " + (e.desktop_position ?? "not in top 20") : "") : "DataForSEO Labs estimate, may be weeks old"}">${live ? "live" : "est."}</span>`;
+}
 function posCell(p, you) {
   if (p == null) return "—";
   const cls = you == null ? "" : p < you ? "worse" : p > you ? "better" : "";
@@ -240,21 +258,21 @@ function posCell(p, you) {
 function sharedTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${tip("Volume")}>Volume</th><th class="num"${tip("KD")}>KD</th><th class="num"${tip("You")}>You</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Cause")}>Cause</th><th${tip("Why")}>Why</th></tr>
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${volTip(rows)}>Volume</th><th class="num"${tip("KD")}>KD</th><th class="num"${tip("You")}>You</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Cause")}>Cause</th><th${tip("Why")}>Why</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.keyword)}<div class="sub">${r.you.url ? `you: <a href="${esc(r.you.url)}" target="_blank" rel="noopener">${esc(path(r.you.url))}</a>` : ""}</div></td>
-      <td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
-      <td class="num"><strong>${r.you.position ?? "—"}</strong></td>
-      ${comps.map(c => { const e = r.competitors[c]; return `<td class="num">${e ? `${posCell(e.position, r.you.position)}${e.url ? `<div class="sub"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(path(e.url))}</a></div>` : ""}` : "—"}</td>`; }).join("")}
-      <td>${r.status === "losing" ? `<span class="pill ${r.cause}">${r.cause}</span>` : `<span class="better">winning</span>`}</td>
+      <td class="num">${volCell(r)}</td><td class="num">${fmt(r.kd)}</td>
+      <td class="num"><strong>${r.you.position ?? "—"}</strong>${srcTag(r.you)}</td>
+      ${comps.map(c => { const e = r.competitors[c]; return `<td class="num">${e ? `${posCell(e.position, r.you.position)}${srcTag(e)}${e.url ? `<div class="sub"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(path(e.url))}</a></div>` : ""}` : "—"}</td>`; }).join("")}
+      <td>${r.status === "losing" ? `<span class="pill ${r.cause}">${r.cause}</span>` : (r.status === "unranked" ? `<span class="sub">neither ranks</span>` : `<span class="better">winning</span>`)}</td>
       <td class="reason">${esc(r.reason)}</td></tr>`).join("")}</table>`;
 }
 function missingTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${tip("Volume")}>Volume</th><th class="num"${tip("KD")}>KD</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Their best page")}>Their best page</th></tr>
-    ${rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
-      ${comps.map(c => `<td class="num">${r.competitors[c]?.position ?? "—"}</td>`).join("")}
-      <td class="wrap">${r.best_url ? `<a href="${esc(r.best_url)}" target="_blank" rel="noopener">${esc(r.best_url.replace(/^https?:\/\//, ""))}</a>` : ""}</td></tr>`).join("")}</table>`;
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${volTip(rows)}>Volume</th><th class="num"${tip("KD")}>KD</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Their best page")}>Their best page</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="num">${volCell(r)}</td><td class="num">${fmt(r.kd)}</td>
+      ${comps.map(c => `<td class="num">${r.competitors[c] ? (r.competitors[c].position ?? "—") + srcTag(r.competitors[c]) : "—"}</td>`).join("")}
+      <td class="wrap">${r.best_url ? `<a href="${esc(r.best_url)}" target="_blank" rel="noopener">${esc(r.best_url.replace(/^https?:\/\//, ""))}</a>` : ""}</td></tr>`).join("")}</table><div class="sub">Source: competitor positions are DataForSEO Labs estimates, as of ${esc((S.fetched_at || "").slice(0, 10))}; volume and KD are Labs estimates except keyword targets (GA).</div>`;
 }
 function linkgapTable() {
   if (!S.linkgap.length) return `<div class="sub">No link-gap domains found.</div>`;

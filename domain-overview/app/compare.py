@@ -50,6 +50,7 @@ def _el(e: dict | None) -> dict:
     ri = e.get("rank_info") or {}
     return {
         "position": e.get("rank_group"),
+        "source": "labs",
         "url": e.get("url"),
         "title": e.get("title"),
         "page_rd": bl.get("referring_main_domains", bl.get("referring_domains")),
@@ -57,6 +58,97 @@ def _el(e: dict | None) -> dict:
         "domain_rank": ri.get("main_domain_rank"),
         "traffic": round(e.get("etv") or 0, 1),
     }
+
+
+def load_live(con) -> dict | None:
+    """Latest finished map-pack run (live Google SERP, Colchester) as {run_id, as_of, rows: {keyword_lower: row}}."""
+    run = con.execute("SELECT id, finished_at FROM mappack_runs WHERE status='done' ORDER BY id DESC LIMIT 1").fetchone()
+    if not run:
+        return None
+    rows = con.execute("SELECT keyword, checked_at, us_org_pos, us_org_url, them_org_pos, them_org_url, "
+                       "m_pack_present IS NOT NULL, m_us_org_pos, m_us_org_url, m_them_org_pos, m_them_org_url, error IS NULL "
+                       "FROM mappack_results WHERE run_id=? AND (error IS NULL OR m_pack_present IS NOT NULL)", (run[0],)).fetchall()
+    return {"run_id": run[0], "as_of": run[1],
+            "rows": {r[0].lower(): {"checked_at": r[1], "us": (r[2], r[3]), "them": (r[4], r[5]), "desktop_ok": bool(r[11]),
+                            "mobile": {"us": (r[7], r[8]), "them": (r[9], r[10])} if r[6] else None} for r in rows}}
+
+
+def load_gsc(con) -> dict | None:
+    """Latest Search Console fetch as {fetch_id, start, end, rows: {query_lower: {position, page, impressions, clicks}}}."""
+    from . import gsc
+    f = gsc.latest(con)
+    if not f:
+        return None
+    acc: dict[str, dict] = {}
+    for q, page, clicks, imps, pos in con.execute(
+            "SELECT query, page, clicks, impressions, position FROM gsc_rows WHERE fetch_id=?", (f["id"],)):
+        a = acc.setdefault(q.lower(), {"w": 0.0, "imps": 0, "clicks": 0, "page": None, "top": -1})
+        imps, clicks = imps or 0, clicks or 0
+        a["imps"] += imps
+        a["clicks"] += clicks
+        a["w"] += (pos or 0) * imps
+        if imps > a["top"]:
+            a["top"], a["page"] = imps, page
+    rows = {q: {"position": round(a["w"] / a["imps"], 1), "page": a["page"], "impressions": a["imps"], "clicks": a["clicks"]}
+            for q, a in acc.items() if a["imps"] > 0}
+    return {"fetch_id": f["id"], "start": f["start_date"], "end": f["end_date"], "rows": rows}
+
+
+def apply_target_volumes(rows: list[dict], tvol: dict | None) -> None:
+    """Keyword-target keywords take the targets-doc volume (Google Ads UK); everything else stays a Labs estimate."""
+    for r in rows:
+        v = (tvol or {}).get(r["keyword"].lower())
+        if v is not None:
+            r["volume"], r["volume_source"] = v, "targets"
+        else:
+            r["volume_source"] = "labs"
+
+
+def apply_gsc(by_kw: dict, domain: str, gscd: dict | None) -> dict | None:
+    """'You' positions from Search Console for serenitybrides.com (absent from GSC = no impressions = no position)."""
+    if not gscd or domain.lower().removeprefix("www.") != "serenitybrides.com":
+        return None
+    n = 0
+    for kw, row in by_kw.items():
+        r = gscd["rows"].get(kw.lower())
+        e = row["you"]
+        if r:
+            n += 1
+            e.update(position=int(round(r["position"])), gsc_position=r["position"], url=r["page"], source="gsc",
+                     gsc_impressions=r["impressions"], gsc_clicks=r["clicks"])
+            e.pop("device", None)
+        else:
+            e.update(position=None, url=None, source="gsc", gsc_impressions=0, gsc_clicks=0)
+            e.pop("device", None)
+    return {"fetch_id": gscd["fetch_id"], "start": gscd["start"], "end": gscd["end"], "keywords": n}
+
+
+def apply_live(by_kw: dict, domain: str, competitors: list[str], live: dict | None, skip_you: bool = False) -> dict | None:
+    """Override Labs positions with live ones (NULL = not in top 20 = no position). Returns the summary or None."""
+    norm = lambda d: d.lower().removeprefix("www.")
+    if not live or norm(domain) != "serenitybrides.com":
+        return None
+    them = next((c for c in competitors if norm(c) == "theweddingshop.uk"), None)
+    n = 0
+    for kw, row in by_kw.items():
+        r = live["rows"].get(kw.lower())
+        if not r:
+            continue
+        targets = ([] if skip_you else [("us", row["you"])]) + ([("them", row["competitors"][them])] if them in row["competitors"] else [])
+        if not targets:
+            continue
+        n += 1
+        m = r.get("mobile")  # prefer the mobile check when it succeeded, else desktop
+        for who, e in targets:
+            if m:
+                pos, url = m[who]
+                e.update(position=pos, url=url, device="mobile")
+                if r.get("desktop_ok", True):
+                    e["desktop_position"] = r[who][0]
+            else:
+                e.update(position=r[who][0], url=r[who][1], device="desktop")
+            e.update(source="live", live_as_of=r["checked_at"])
+    return {"run_id": live["run_id"], "as_of": live["as_of"], "keywords": n}
 
 
 def classify(us: dict, them: dict) -> tuple[str, str]:
@@ -80,7 +172,8 @@ def classify(us: dict, them: dict) -> tuple[str, str]:
     return "on-page", f"Authority is similar, so relevance/content decides ({reason})"
 
 
-async def run(domain: str, competitors: list[str], location_code: int, language_code: str) -> dict:
+async def run(domain: str, competitors: list[str], location_code: int, language_code: str, live: dict | None = None, gscd: dict | None = None,
+              tvol: dict | None = None) -> dict:
     loc = {"location_code": location_code, "language_code": language_code}
     async with dfs.client() as c:
         jobs = {}
@@ -154,6 +247,9 @@ async def run(domain: str, competitors: list[str], location_code: int, language_
                 "competitors": {},
             })
             row["competitors"][comp] = them
+    gsc_summary = apply_gsc(by_kw, domain, gscd)
+    live_summary = apply_live(by_kw, domain, competitors, live, skip_you=gsc_summary is not None)
+    apply_target_volumes(list(by_kw.values()), tvol)
     shared = []
     for row in by_kw.values():
         yp = row["you"]["position"] or 999
@@ -166,6 +262,8 @@ async def run(domain: str, competitors: list[str], location_code: int, language_
                 if cause == "off-page":
                     reason += " (a dedicated page may help too)"
             row.update(status="losing", leader=best_c, cause=cause, reason=reason)
+        elif row["you"]["position"] is None:
+            row.update(status="unranked", leader=None, cause=None, reason="Neither you nor these competitors rank (no Search Console impressions / not in live top 20)")
         else:
             row.update(status="winning", leader=None, cause=None, reason="You rank above these competitors")
         shared.append(row)
@@ -188,6 +286,7 @@ async def run(domain: str, competitors: list[str], location_code: int, language_
                 "competitors": {},
             })
             row["competitors"][comp] = e
+    apply_target_volumes(list(miss.values()), tvol)
     missing = []
     for row in miss.values():
         best_c, best = min(row["competitors"].items(), key=lambda kv: kv[1]["position"] or 999)
@@ -212,7 +311,7 @@ async def run(domain: str, competitors: list[str], location_code: int, language_
     verdict = {
         "shared_keywords": len(shared),
         "losing_keywords": len(losing),
-        "winning_keywords": len(shared) - len(losing),
+        "winning_keywords": sum(r["status"] == "winning" for r in shared),
         "losing_volume": vol(losing),
         "offpage_keywords": len(off),
         "offpage_share": round(100 * vol(off) / lost_vol),
@@ -236,6 +335,8 @@ async def run(domain: str, competitors: list[str], location_code: int, language_
         "verdict": verdict,
         "sites": sites,
         "shared": shared,
+        "live_positions": live_summary,
+        "gsc_positions": gsc_summary,
         "missing": missing,
         "linkgap": linkgap,
         "cost": round(cost, 4),
@@ -249,7 +350,7 @@ def _headline(v: dict) -> str:
         main = "on-page" if v["onpage_share"] >= v["offpage_share"] else "off-page"
         parts.append(
             f"On keywords you share, competitors beat you on {v['losing_keywords']} "
-            f"({v['losing_volume']:,} searches/mo). {v['onpage_share']}% of that volume looks on-page "
+            f"({v['losing_volume']:,} searches/mo, estimated). {v['onpage_share']}% of that volume looks on-page "
             f"(you have equal or more authority) and {v['offpage_share']}% looks off-page (they have more). "
             f"Main gap: {main}."
         )

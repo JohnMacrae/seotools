@@ -87,3 +87,13 @@ def test_api(tmp_path, monkeypatch):
         assert c.delete(f"/api/targets/{n.json()['id']}").status_code == 404
         assert len(c.get("/api/targets").json()) == 11
         assert c.get("/targets").status_code == 200
+
+
+def test_volume_map_primary_and_variants():
+    t = [dict(primary_keyword="Wedding Dress Shop Colchester", supporting=["wedding shop colchester", "Bridal Shop"], volume=1600),
+         dict(primary_keyword="bridal shop", supporting=["x variant"], volume=900),
+         dict(primary_keyword="{Designer} dresses", supporting=["no volume kw"], volume=None)]
+    m = targets.volume_map(t)
+    assert m["wedding dress shop colchester"] == 1600 and m["wedding shop colchester"] == 1600
+    assert m["bridal shop"] == 900  # a primary's own figure beats another row's variant
+    assert m["x variant"] == 900 and "no volume kw" not in m and "{designer} dresses" not in m

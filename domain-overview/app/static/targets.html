@@ -61,6 +61,7 @@
       <span class="sub" id="msg">Curated, not inferred (ADR 0001). Seeding refreshes untouched rows and keeps rows you have edited.</span>
     </div>
     <table id="t"></table>
+    <div class="sub" id="vol"></div>
   </div>
 </main>
 <script>
@@ -71,7 +72,7 @@ const TIPS = {
   "Target page": "Page meant to rank; \"(new)\" = not built yet.",
   "Primary keyword": "Main keyword the page should rank for.",
   "Supporting keywords": "Related keywords the same page should also cover.",
-  "Volume": "Monthly searches for the primary keyword (from the targets doc).",
+  "Volume": "Google Ads UK monthly (keyword targets doc)",
   "Win basis": "What counts as winning this keyword; \"(edited)\" = changed here.",
   "Phase": "Rollout phase (1 = bridal now).",
   "Line": "Product line: bridal, bridesmaids or MOB.",
@@ -91,7 +92,11 @@ async function api(method, url, body) {
 }
 const wrap = fn => async (...a) => { try { document.getElementById("err").innerHTML = ""; await fn(...a); } catch (e) { document.getElementById("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
 
-async function load() { rows = await api("GET", "/api/targets"); render(); }
+async function load() {
+  rows = await api("GET", "/api/targets"); render();
+  try { const m = await api("GET", "/api/targets/meta");
+    if (m.doc_mtime) document.getElementById("vol").textContent = `Volume: Google Ads UK monthly, keyword targets doc as of ${m.doc_mtime.slice(0, 10)}.`; } catch {}
+}
 
 function render() {
   const head = `<tr><th${tip("#")}>#</th><th${tip("Target page")}>Target page</th><th${tip("Primary keyword")}>Primary keyword</th><th${tip("Supporting keywords")}>Supporting keywords</th><th${tip("Volume")}>Volume</th><th${tip("Win basis")}>Win basis</th><th${tip("Phase")}>Phase</th><th${tip("Line")}>Line</th><th></th></tr>`;

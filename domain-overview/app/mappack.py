@@ -20,6 +20,13 @@ DEPTH = 20
 SEP = "›"
 
 
+# Mobile check (desktop columns above stay desktop). m_pack_present is NULL when the mobile call did not succeed.
+MOBILE_COLS = {"m_pack_present": "INTEGER", "m_pack_size": "INTEGER", "m_us_pack_rank": "INTEGER", "m_them_pack_rank": "INTEGER",
+               "m_us_org_pos": "INTEGER", "m_us_org_url": "TEXT", "m_them_org_pos": "INTEGER", "m_them_org_url": "TEXT",
+               "m_error": "TEXT"}
+DEVICES = ("desktop", "mobile")
+
+
 def ensure_tables(con) -> None:
     con.execute("""CREATE TABLE IF NOT EXISTS mappack_runs (
         id INTEGER PRIMARY KEY, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL,
@@ -31,6 +38,10 @@ def ensure_tables(con) -> None:
         them_pack_rank INTEGER, them_rating REAL, them_reviews INTEGER,
         us_org_pos INTEGER, us_org_url TEXT, them_org_pos INTEGER, them_org_url TEXT,
         win_set INTEGER, won INTEGER, cost REAL, PRIMARY KEY(run_id, keyword))""")
+    have = {r[1] for r in con.execute("PRAGMA table_info(mappack_results)")}
+    for col, typ in MOBILE_COLS.items():  # idempotent: only adds what an older DB lacks
+        if col not in have:
+            con.execute(f"ALTER TABLE mappack_results ADD COLUMN {col} {typ}")
 
 
 # ---- parsing -------------------------------------------------------------------------------------------------
@@ -70,6 +81,10 @@ def _breadcrumb(bc: str | None) -> tuple[str | None, str | None]:
     return host, url.rstrip(".") if segs else "https://" + host + "/"
 
 
+PLATFORMS = {"facebook": "facebook.com", "instagram": "instagram.com", "pinterest": "pinterest.com", "tiktok": "tiktok.com",
+             "youtube": "youtube.com", "reddit": "reddit.com", "x": "x.com", "twitter": "x.com", "linkedin": "linkedin.com"}
+
+
 def parse_organic(it: dict) -> dict:
     """Real domain and best-known URL for one organic item. `url_exact` is False when rebuilt from the breadcrumb."""
     url = unwrap(it.get("url"))
@@ -80,6 +95,8 @@ def parse_organic(it: dict) -> dict:
         wn = (it.get("website_name") or "").strip().lower()
         if re.match(r"^[\w-]+(\.[\w-]+)+$", wn):
             host = wn.removeprefix("www.")
+        else:  # social results: website_name is "Facebook\xa0·\xa0Group name" and the breadcrumb is "30+ comments"
+            host = PLATFORMS.get(re.split(r"\s*[·|]\s*", wn.replace("\xa0", " "))[0].strip())
     return {"domain": host, "url": approx, "url_exact": False}
 
 
@@ -100,10 +117,16 @@ def _find_organic(items: list[dict], who: dict) -> tuple[int | None, str | None]
     return None, None
 
 
+def is_ad(e: dict) -> bool:
+    """A paid listing inside the local pack (DFS is_paid; titled 'Serenity Brides   My Ad Centre', no domain/url)."""
+    return bool(e.get("is_paid")) or "my ad centre" in (e.get("title") or "").lower()
+
+
 def analyse(result: dict | None) -> dict:
     """Per-keyword record from one SERP result (result[0] of the task). Pack rank = order within the pack."""
     items = (result or {}).get("items") or []
-    pack = sorted([i for i in items if i.get("type") in ("local_pack", "map")], key=lambda i: i.get("rank_group") or 99)
+    pack = sorted([i for i in items if i.get("type") in ("local_pack", "map") and not is_ad(i)], key=lambda i: i.get("rank_group") or 99)
+    pack = list({(e.get("title"), e.get("url")): e for e in reversed(pack)}.values())[::-1]  # same listing twice -> one slot
     out = dict(pack_present=int(bool(pack)), pack_size=len(pack))
     for tag, who in (("us", OURS), ("them", THEIRS)):
         rank = rating = votes = None
@@ -146,20 +169,28 @@ def create_run(con, now: str, keywords: int) -> int:
 
 
 async def execute(open_db, run_id: int, keywords: list[str], now) -> None:
-    """Check every keyword (DFS concurrency is capped in dfs.py), saving each result as it arrives."""
+    """Check every keyword on desktop and mobile (DFS concurrency is capped in dfs.py), saving each result as it arrives."""
     async with dfs.client() as c:
-        async def one(kw: str):
-            task = {"keyword": kw, "language_code": "en", "device": "desktop", "depth": DEPTH, **LOCATION}
+        async def call(kw: str, device: str):
+            task = {"keyword": kw, "language_code": "en", "device": device, "depth": DEPTH, **LOCATION}
             try:
                 res, cost = await dfs.post_path(c, PATH, task, mock_name="serp_live")
-                row, err = analyse(res), None
-            except Exception as e:  # one bad keyword must not sink the run
-                res, cost, row, err = None, 0.0, {}, str(e)[:300]
+                return analyse(res), cost, None
+            except Exception as e:  # one bad call must not sink the run
+                return None, 0.0, str(e)[:300]
+
+        async def one(kw: str):
+            (d, dcost, derr), (m, mcost, merr) = await asyncio.gather(*(call(kw, dev) for dev in DEVICES))
+            row = dict(d or {})
+            if m:
+                row.update({"m_" + k: m[k] for k in ("pack_present", "pack_size", "us_pack_rank", "them_pack_rank",
+                                                      "us_org_pos", "us_org_url", "them_org_pos", "them_org_url")})
+            cost = dcost + mcost
             con = open_db()
             try:
-                cols = ["run_id", "keyword", "checked_at", "error", "cost", *row]
+                cols = ["run_id", "keyword", "checked_at", "error", "m_error", "cost", *row]
                 con.execute(f"INSERT OR REPLACE INTO mappack_results({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
-                            [run_id, kw, now(), err, cost, *row.values()])
+                            [run_id, kw, now(), derr, merr, cost, *row.values()])
                 con.execute("UPDATE mappack_runs SET done=done+1, cost=cost+? WHERE id=?", (cost, run_id))
                 con.commit()
             finally:
@@ -167,7 +198,7 @@ async def execute(open_db, run_id: int, keywords: list[str], now) -> None:
         await asyncio.gather(*(one(k) for k in keywords))
     con = open_db()
     try:
-        failed = con.execute("SELECT COUNT(*) FROM mappack_results WHERE run_id=? AND error IS NOT NULL", (run_id,)).fetchone()[0]
+        failed = con.execute("SELECT COUNT(*) FROM mappack_results WHERE run_id=? AND error IS NOT NULL AND m_pack_present IS NULL", (run_id,)).fetchone()[0]
         con.execute("UPDATE mappack_runs SET status=?, finished_at=?, error=? WHERE id=?",
                     ("done" if failed < len(keywords) else "error", now(),
                      f"{failed} of {len(keywords)} keywords failed" if failed else None, run_id))

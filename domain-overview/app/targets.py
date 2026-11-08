@@ -52,6 +52,21 @@ def parse_doc(text: str) -> list[dict]:
     return out
 
 
+def volume_map(rows: list[dict]) -> dict[str, int]:
+    """{keyword_lower: Google Ads UK monthly volume} for every primary and close-variant keyword of the targets
+    (variants share the primary's figure; a primary's own figure wins over a variant's). ADR 0002."""
+    out: dict[str, int] = {}
+    for pass_primary in (True, False):
+        for r in rows:
+            if r.get("volume") is None:
+                continue
+            for kw in ([r["primary_keyword"]] if pass_primary else r.get("supporting") or []):
+                k = (kw or "").strip().lower()
+                if k:
+                    out.setdefault(k, r["volume"])
+    return out
+
+
 def _row(r) -> dict:
     d = dict(r)
     d["supporting"] = json.loads(d["supporting"])

@@ -133,7 +133,7 @@ const TIPS = {
   "built|Slug": "Planned URL, or the live URL once built.",
   "built|Status": "Built = a live 200 page with this slug was found in the crawl.",
   "gap|Primary keyword": "Main keyword the new page should target.",
-  "gap|Monthly volume": "DFS volume; \"~\" = estimated from GSC impressions ÷ 3 months.",
+  "gap|Monthly volume": "GA = Google Ads UK monthly, from keyword targets doc; est. = DataForSEO Labs estimate; \"~\" = estimated from GSC impressions ÷ 3 months.",
   "gap|Sources": "Where the idea came from: GSC queries, competitor pages, DFS keyword ideas.",
   "gap|Why": "Reason given by the planner."
 };
@@ -377,6 +377,9 @@ document.addEventListener("change", e => {
 
 
 // ---- Pages to build ----
+const volTag = r => r.volume_is_proxy || r.volume_source === "gsc" ? "" : r.volume_source === "targets" ? ` <span class="sub" title="Google Ads UK monthly, from keyword targets doc">GA</span>`
+  : r.volume_source === "mixed" ? ` <span class="sub" title="Some keywords: Google Ads UK monthly from keyword targets doc; others: DataForSEO Labs estimate">GA/est.</span>`
+  : ` <span class="sub" title="DataForSEO Labs estimate">est.</span>`;
 const SRC_NAMES = { gsc: "Search Console", competitor: "competitor", ideas: "keyword ideas" };
 const badges = srcs => (srcs || []).map(x => `<span class="badge">${esc(SRC_NAMES[x] || x)}</span>`).join(" ");
 let gapTimer = null;
@@ -438,7 +441,7 @@ function renderGaps() {
   for (const p of d.pages) lines[p.line] = (lines[p.line] || 0) + 1;
   const chip = (k, name, n) => `<button data-gline="${k}" class="${cur.gline === k ? "on" : ""}">${name}<small>${fmt(n)} pages</small></button>`;
   const rows = gapRows(d), { key, dir } = cur.gsort;
-  h += `<div class="sub" style="margin-bottom:10px">Run #${g.id} · ${d.llm_used ? "model " + esc(d.model) : "built without the model"} · cost $${(g.cost || 0).toFixed(3)} ·
+  h += `<div class="sub" style="margin-bottom:10px">Run #${g.id} · as of ${esc((g.created_at || "").replace("T", " "))} · ${d.llm_used ? "model " + esc(d.model) : "built without the model"} · cost $${(g.cost || 0).toFixed(3)} ·
     ${fmt(d.sources.gsc)} Search Console, ${fmt(d.sources.competitor)} competitor, ${fmt(d.sources.ideas)} keyword-idea keywords · ${fmt(d.dropped_covered)} dropped as already covered</div>`;
   if (d.llm_used === false) h += `<div class="note" style="margin:0 0 10px">Built without the model: one generic page per keyword cluster</div>`;
   h += (d.warnings || []).slice(0, 8).map(w => `<div class="err">${esc(w)}</div>`).join("");
@@ -446,14 +449,14 @@ function renderGaps() {
     <div class="card"><h2>Pages to build <small class="sub">Score = monthly volume × (1 − difficulty) × line weight, ×1.5 when Google already shows us for it. "~" = estimated from Search Console impressions ÷ 3. Click a row for details.</small></h2>
     ${rows.length ? `<div class="scroll" style="max-height:700px"><table><tr>${GCOLS.map(([k, n, num]) => `<th data-gsort="${k}"${tip("gap|"+n)} ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
     ${rows.map(r => `<tr class="row" data-gap="1"><td><b>${esc(r.title)}</b><div class="sub">${esc(r.page_type)}</div></td><td class="wrap">${esc(r.slug)}</td><td>${esc(LINE_NAMES[r.line] || r.line)}</td>
-      <td>${esc(r.primary_keyword)}</td><td class="num">${r.volume_is_proxy ? "~" : ""}${fmt(r.volume)}</td><td>${badges(r.sources)}</td><td>${esc(r.why)}</td></tr>
+      <td>${esc(r.primary_keyword)}</td><td class="num">${r.volume_is_proxy ? "~" : ""}${fmt(r.volume)}${volTag(r)}</td><td>${badges(r.sources)}</td><td>${esc(r.why)}</td></tr>
       <tr class="more" hidden><td colspan="7">
         <div><b>Secondary keywords:</b> ${r.secondary_keywords.length ? r.secondary_keywords.map(esc).join(", ") : "—"}</div>
         <div><b>Hub:</b> ${r.hub ? link(r.hub) : "—"}</div>
         <div><b>Link to it from:</b> ${r.link_from.length ? r.link_from.map(link).join(" · ") : "—"}</div>
         ${r.gsc && r.gsc.impressions ? `<div><b>Search Console:</b> ${fmt(r.gsc.impressions)} impressions in 90 days${r.gsc.best_position ? `, best position ${r.gsc.best_position}` : ""}</div>` : ""}
         <div><b>Competitor URLs:</b> ${r.competitor_urls.length ? r.competitor_urls.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\//, ""))}</a>`).join(" · ") : "—"}</div>
-        <div class="sub">Score ${fmt(r.score)}${r.kd != null ? ` · difficulty ${Math.round(r.kd)}` : " · difficulty unknown"}</div></td></tr>`).join("")}</table></div>` : `<div class="sub">No proposed pages for this filter.</div>`}</div>
+        <div class="sub">Score ${fmt(r.score)}${r.kd != null ? ` · difficulty ${Math.round(r.kd)} <span title="DataForSEO Labs estimate">(Labs est.)</span>` : " · difficulty unknown"}</div></td></tr>`).join("")}</table></div>` : `<div class="sub">No proposed pages for this filter.</div>`}</div>
     <div class="card"><h2>Improve existing pages instead <small class="sub">${fmt((d.improve || []).length)} pages</small></h2>
     ${(d.improve || []).length ? d.improve.map(i => `<div class="todo"><div class="wrap">${link(i.url)}<div class="sub">${esc(i.title || "")}</div></div>
       <div><div>${i.keywords.map(esc).join(", ")}</div><div class="sub">${esc(i.why)}</div></div></div>`).join("") : `<div class="sub">None.</div>`}</div>`;
@@ -498,7 +501,7 @@ function gscCell(g) {
   if (!g) return `<span class="sub">no data yet</span>`;
   const f = (a, b, dec) => `${a == null ? "—" : Number(a).toFixed(dec ?? 0)} → ${b == null ? "—" : Number(b).toFixed(dec ?? 0)}`;
   return `<div>${f(g.before.clicks, g.after.clicks)} clicks</div><div>${f(g.before.impressions, g.after.impressions)} impr</div>
-    <div>pos ${f(g.before.position, g.after.position, 1)}</div><div class="sub">${g.days} days either side</div>`;
+    <div>pos ${f(g.before.position, g.after.position, 1)}</div><div class="sub">${g.days} days either side${g.data_end ? `, Search Console data to ${esc(g.data_end)}` : ""}</div>`;
 }
 
 function renderProgress() {

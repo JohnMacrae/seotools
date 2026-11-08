@@ -287,7 +287,7 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
                   + (f"; top query “{q.get('query')}”" if q.get("query") else ""))
         if t.get("store_row"):
             r = t["store_row"]
-            vol = f"{r['volume']:,.0f}/mo" if (r.get("volume") or 0) > 0 and not r.get("template") else "no stored volume"
+            vol = f"{r['volume']:,.0f}/mo Google Ads" if (r.get("volume") or 0) > 0 and not r.get("template") else "no stored volume"
             reason = (f"Keyword target: “{r['primary_keyword']}” ({vol})"
                       + (", new page with no Google data yet" if r.get("is_new") and not t.get("impressions") else ""))
         srcs: dict[str, float] = {}

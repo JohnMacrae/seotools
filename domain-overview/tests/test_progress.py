@@ -159,7 +159,7 @@ def test_gaps_lifecycle(tmp_path, monkeypatch):
     monkeypatch.setattr(main.gsc, "configured", lambda: False)
     seen = []
 
-    async def build_gaps(pages, strength, gsc_rows, comparison, progress=None):
+    async def build_gaps(pages, strength, gsc_rows, comparison, progress=None, tvol=None):
         seen.append((len(pages), comparison))
         progress("working")
         return {"pages": [], "improve": [], "dropped_covered": 0, "sources": {}, "cost": 0.0, "model": None,

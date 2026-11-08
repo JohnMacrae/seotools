@@ -130,3 +130,11 @@ def test_improve_item_kept(monkeypatch):
     monkeypatch.setattr(llm, "ask_json", ask_json)
     out = run()
     assert out["improve"] and out["improve"][0]["url"] == U("/blog/a") and out["pages"] == []
+
+
+def test_candidate_volume_source():
+    cands = {"a kw": {"volume": 10}, "b kw": {"volume": None, "impressions": 90}, "c kw": {"volume": 5}}
+    pagegap.apply_target_volumes(cands, {"a kw": 1600})
+    assert (cands["a kw"]["volume"], cands["a kw"]["volume_source"]) == (1600, "targets")
+    assert cands["b kw"]["volume_source"] == "gsc" and cands["b kw"]["volume"] is None
+    assert (cands["c kw"]["volume"], cands["c kw"]["volume_source"]) == (5, "labs")

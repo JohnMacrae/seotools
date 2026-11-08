@@ -46,7 +46,7 @@
     </div>
     <div id="sum"></div>
   </div>
-  <div class="card"><h3 style="margin-top:0">Keywords</h3><div class="bar"><label class="sub"><input type="checkbox" id="only"> pack present only</label></div><table id="res"></table></div>
+  <div class="card"><h3 style="margin-top:0">Keywords</h3><div class="bar"><label class="sub"><input type="checkbox" id="only"> pack present only</label></div><table id="res"></table><div class="sub">Live columns are single checks and swing between calls; our reference position is Search Console.</div></div>
   <div class="card"><h3 style="margin-top:0">Run history</h3><table id="hist"></table></div>
 </main>
 <script>
@@ -62,10 +62,14 @@ const TIPS = {
   "sum|Avg pack rank them": "Competitor's average map-pack position, where they appear (1 = top).",
   "sum|Wins / win set": "Keywords won out of keywords with a win condition.",
   "res|Pack": "Map pack shown for this keyword.",
-  "res|Us pack": "Our map-pack position, with rating and review count.",
-  "res|Them pack": "Competitor's map-pack position, with rating and review count.",
-  "res|Us organic": "Our organic position (first matching result).",
-  "res|Them organic": "Competitor's organic position (first matching result).",
+  "res|Us pack": "Our desktop map-pack position (ads excluded), with rating and review count.",
+  "res|Them pack": "Competitor's desktop map-pack position (ads excluded), with rating and review count.",
+  "res|Us organic": "Our desktop organic position (first matching result).",
+  "res|Them organic": "Competitor's desktop organic position (first matching result).",
+  "res|Us pack mobile": "Our map-pack position on a mobile Google search (ads excluded).",
+  "res|Them pack mobile": "Competitor's map-pack position on a mobile Google search (ads excluded).",
+  "res|Us organic mobile": "Our organic position on a mobile Google search. Compare tab prefers this over desktop.",
+  "res|Them organic mobile": "Competitor's organic position on a mobile Google search.",
   "res|Win": "If they're organic #1 we must be #1; if they're in the pack we must be too. n/a = neither applies.",
   "hist|Run": "Map-pack run number. Click to view.",
   "hist|Started": "When the run started.",
@@ -111,10 +115,12 @@ const rate = (r, n) => r == null ? "" : ` <span class=sub>${r}* (${n})</span>`;
 function renderRes() {
   const only = document.getElementById("only").checked;
   const rows = cur.results.filter(r => !only || r.pack_present);
-  document.getElementById("res").innerHTML = `<tr><th>Keyword</th><th${tip("res|Pack")}>Pack</th><th${tip("res|Us pack")}>Us pack</th><th${tip("res|Them pack")}>Them pack</th><th${tip("res|Us organic")}>Us organic</th><th${tip("res|Them organic")}>Them organic</th><th${tip("res|Win")}>Win</th></tr>` +
-    rows.map(r => r.error ? `<tr><td>${esc(r.keyword)}</td><td colspan=6 class=sub>${esc(r.error)}</td></tr>` :
-    `<tr><td>${esc(r.keyword)}</td><td>${r.pack_present ? "yes" : "no"}</td><td>${dash(r.us_pack_rank)}${rate(r.us_rating, r.us_reviews)}</td><td>${dash(r.them_pack_rank)}${rate(r.them_rating, r.them_reviews)}</td>
-    <td>${link(r.us_org_url, r.us_org_pos)}</td><td>${link(r.them_org_url, r.them_org_pos)}</td><td>${r.win_set ? (r.won ? "win" : "<b>not yet</b>") : "<span class=sub>n/a</span>"}</td></tr>`).join("");
+  document.getElementById("res").innerHTML = `<tr><th>Keyword</th><th${tip("res|Pack")}>Pack</th><th${tip("res|Us pack")}>Us pack</th><th${tip("res|Them pack")}>Them pack</th><th${tip("res|Us pack mobile")}>Us pack (mob)</th><th${tip("res|Them pack mobile")}>Them pack (mob)</th><th title="Search Console average over ${esc(cur.gsc ? cur.gsc.start + "–" + cur.gsc.end : "the stored window")}; trust this over single live checks">Us GSC pos</th><th${tip("res|Us organic")}>Us organic</th><th${tip("res|Them organic")}>Them organic</th><th${tip("res|Us organic mobile")}>Us organic (mob)</th><th${tip("res|Them organic mobile")}>Them organic (mob)</th><th${tip("res|Win")}>Win</th></tr>` +
+    rows.map(r => r.error && r.m_pack_present == null ? `<tr><td>${esc(r.keyword)}</td><td colspan=11 class=sub>${esc(r.error)}</td></tr>` :
+    `<tr><td>${esc(r.keyword)}${r.error ? `<div class=sub title="Desktop check failed">desktop: ${esc(r.error)}</div>` : ""}${r.m_error ? `<div class=sub title="Mobile check failed">mobile: ${esc(r.m_error)}</div>` : ""}</td><td>${r.error ? "-" : r.pack_present ? "yes" : "no"}</td><td>${dash(r.us_pack_rank)}${rate(r.us_rating, r.us_reviews)}</td><td>${dash(r.them_pack_rank)}${rate(r.them_rating, r.them_reviews)}</td>
+    <td>${r.m_pack_present == null ? dash(null) : dash(r.m_us_pack_rank)}</td><td>${r.m_pack_present == null ? dash(null) : dash(r.m_them_pack_rank)}</td>
+    <td>${r.us_gsc_pos == null ? dash(null) : esc(r.us_gsc_pos)}</td><td>${link(r.us_org_url, r.us_org_pos)}</td><td>${link(r.them_org_url, r.them_org_pos)}</td>
+    <td>${r.m_pack_present == null ? dash(null) : link(r.m_us_org_url, r.m_us_org_pos)}</td><td>${r.m_pack_present == null ? dash(null) : link(r.m_them_org_url, r.m_them_org_pos)}</td><td>${r.win_set ? (r.won ? "win" : "<b>not yet</b>") : "<span class=sub>n/a</span>"}</td></tr>`).join("");
 }
 function renderHist() {
   document.getElementById("hist").innerHTML = `<tr><th${tip("hist|Run")}>Run</th><th${tip("hist|Started")}>Started</th><th${tip("hist|Status")}>Status</th><th${tip("hist|Keywords")}>Keywords</th><th${tip("hist|Pack")}>Pack</th><th${tip("hist|Us in")}>Us in</th><th${tip("hist|Them in")}>Them in</th><th${tip("hist|Avg rank us / them")}>Avg rank us / them</th><th${tip("hist|Wins")}>Wins</th><th${tip("hist|Spend")}>Spend</th></tr>` +
