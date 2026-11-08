@@ -85,6 +85,8 @@ def test_not_in_plan():
     assert "not in plan" in e[1]["flags"] and "not in plan" not in e[2]["flags"]
     e, _ = run([], has_plan=False)
     assert "not in plan" not in e[1]["flags"]
+    e, _ = run([], sugg=[sg("/blog/a", LACE)])
+    assert "not in plan" not in e[2]["flags"]  # line hub /collections/bridal is exempt
 
 
 def test_contextual_status_and_planned_missing():

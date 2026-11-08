@@ -177,7 +177,7 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
         wrong = bool(top) and top != tk
         if wrong:
             flags.append("wrong page ranking")
-        if has_plan and not sugg_by_dst.get(tk):
+        if has_plan and not sugg_by_dst.get(tk) and not lp.line_hub(e["target_page"]):  # planner prefers specific ranges over hubs
             flags.append("not in plan")
         sup = sup_by_dst.get(tk, [])
         n_approved = sum(r["status"] == "approved" for r in sup)
