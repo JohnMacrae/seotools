@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from urllib.parse import urlsplit
 
 _WORDS = r"[a-z0-9']+"
@@ -25,6 +26,17 @@ def contains_variant(text: str, kw: str) -> bool:
         return False
     words = [_stem(w) for w in re.findall(_WORDS, (text or "").lower())]
     return any(tuple(sorted(words[i:i + n])) == k for i in range(len(words) - n + 1))
+
+
+def contains_loose(text: str, kw: str, gap: int = 2) -> bool:
+    """All of kw's words (close variants) within a run of len(kw)+gap words, e.g.
+    "Wedding dress & bridal shop in Colchester" holds "wedding dress shop colchester"."""
+    k = Counter(_stem_key(kw))
+    n = sum(k.values())
+    if not n:
+        return False
+    words = [_stem(w) for w in re.findall(_WORDS, (text or "").lower())]
+    return any(not (k - Counter(words[i:i + n + gap])) for i in range(max(1, len(words) - n + 1)))
 
 
 def first_sentence(text: str) -> str:

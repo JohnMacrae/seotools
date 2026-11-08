@@ -185,3 +185,11 @@ def test_onpage_missing_template_per_page():
     e = {x["target_page"]: x for x in res["entries"]}
     assert e[VENI]["onpage_missing"] == []  # path /bridal/veni carries "Veni wedding dresses"
     assert e[SINC]["onpage_missing"] == ["h1", "first sentence"]  # checked against "Sincerity wedding dresses"
+
+
+def test_onpage_home_page_has_no_url_check():
+    rows = [{"id": 1, "path": "/", "primary_keyword": "wedding dress shop Colchester", "supporting": [], "product_line": "bridal"}]
+    pg = {"url": U("/"), "status": 200, "title": "Wedding Dresses & Bridal Shop in Colchester, Essex | X",
+          "h1": "Wedding dress & bridal shop in Colchester, Essex", "text": "Welcome. More."}
+    res = lm.build(rows, [pg], [], {}, set(), [], [])
+    assert res["entries"][0]["onpage_missing"] == ["first sentence"]  # loose match passes title and h1; "/" not checked
