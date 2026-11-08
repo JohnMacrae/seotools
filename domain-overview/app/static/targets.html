@@ -141,6 +141,7 @@ const FLAG_TIPS = {"needs links": "Fewer than 3 supporting pages link to this ta
   "anchor conflict": "A link to this page uses another target's keyword and none of its own.",
   "wrong page ranking": "Google ranks a different page of ours for these keywords.",
   "not in plan": "The link plan has no suggestion pointing at this target page.",
+  "keyword missing": "The target's primary keyword (or a close variant) is missing from the listed on-page spots.",
   "no supporting pages": "No supporting page has been approved for this target page yet."};
 const pos = p => p == null ? "n/a" : p.toFixed(1);
 const short = u => { try { const x = new URL(u); return x.pathname + x.search || "/"; } catch (e) { return u; } };
@@ -183,8 +184,16 @@ function supSection(e) {
     ${ap.length ? `<p class="sub">Approved</p><ul>${approved}</ul>` : ""}${pr.length ? `<p class="sub">Proposed</p><ul>${proposed}</ul>` : ""}
     ${ap.length || pr.length ? "" : '<p class="sub">None yet. Run the supporting-page review.</p>'}</div>`;
 }
+const OP_TIP = "Target's primary keyword (or a close variant) in the page title, URL path, H1 and first sentence of the body copy";
+function onpageLine(e) {
+  const m = e.onpage_missing;
+  if (m == null) return `<p class="sub" title="${esc(OP_TIP)}">On-page: not crawled</p>`;
+  const items = [["Title", "title"], ["URL", "url"], ["H1", "h1"], ["First sentence", "first sentence"]].map(([l, k]) =>
+    m.includes(k) ? `<span class="st-bad">&#10007; ${l}</span>` : `<span class="st-done">&#10003; ${l}</span>`).join(" &middot; ");
+  return `<p class="sub" title="${esc(OP_TIP)}">On-page: ${items}</p>`;
+}
 function card(e) {
-  const flags = e.flags.map(f => `<span class="chip" title="${esc(FLAG_TIPS[f] || "")}">${esc(f)}</span>`).join("");
+  const flags = e.flags.map(f => `<span class="chip" title="${esc(FLAG_TIPS[f] || FLAG_TIPS[f.split(":")[0]] || "")}">${esc(f)}</span>`).join("");
   const id = "c" + e.target_page;
   let gscLine = `GSC position: target page ${pos(e.gsc_target_page_position)}`;
   if (e.wrong_page) gscLine += ` &middot; top page ${a(e.gsc_top_page)} at ${pos(e.gsc_top_page_position)}`;
@@ -199,7 +208,7 @@ function card(e) {
   const conf = e.conflicts.length ? `<p class="sub"><b>Anchor conflicts:</b></p><ul class="sub">${e.conflicts.map(c =>
     `<li>${a(c.src)}: "${esc(c.anchor)}" contains "${esc(c.keyword)}" (target #${esc(c.other_target_id)})${c.count > 1 ? ` &times;${c.count}` : ""}</li>`).join("")}</ul>` : "";
   return `<div class="card lm"><h3>${esc(e.keywords.join("; "))} &rarr; ${a(e.target_page)}${flags}</h3>
-    <p class="sub">${esc(e.product_line ?? "")} &middot; crawl ${esc(e.crawl_status)} &middot; ${gscLine}</p>${ctx}${todo}${tpl}${conf}${supSection(e)}</div>`;
+    <p class="sub">${esc(e.product_line ?? "")} &middot; crawl ${esc(e.crawl_status)} &middot; ${gscLine}</p>${onpageLine(e)}${ctx}${todo}${tpl}${conf}${supSection(e)}</div>`;
 }
 const supBusy = () => LM.supporting_run && LM.supporting_run.status === "running";
 const supStatus = () => { const r = LM.supporting_run; if (!r) return "No review run yet.";
