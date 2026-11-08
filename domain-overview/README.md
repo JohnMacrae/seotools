@@ -6,6 +6,8 @@ Panels: organic keywords (with new/up/down/lost movement), estimated traffic and
 a 12-month trend, ranking-position distribution, top organic keywords, top pages, main organic
 competitors and a competitive positioning map.
 
+All pages follow the OS light/dark setting (`prefers-color-scheme`); there is no manual toggle.
+
 Every lookup is saved as a dated snapshot in SQLite (`./data/overview.db`). A repeat lookup
 within `CACHE_DAYS` is served from the cache for free; "Refresh (paid)" forces a new fetch.
 Past snapshots can be picked from the dropdown.
