@@ -226,7 +226,22 @@ async def topic_map(client, content: list[dict], colls: list[dict]) -> tuple[dic
 
 # ---------------------------------------------------------------- candidates and guardrails
 
-def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[dict], ranges: set, last: set) -> list[dict]:
+STORE_MIN_LINKS = 2     # links each keyword-target-store page is guaranteed in select()
+NEW_PAGE_BUMP = 1.25    # new pages have no history to earn an opportunity score
+
+
+def store_opportunity(row: dict, line: str) -> float:
+    """Opportunity for a keyword-target page, in the same unit as linkgraph's: extra clicks over the GSC window.
+    Monthly volume x months in the window x CTR gain from a typical unranked position (~20) to TARGET_POS,
+    times the line weight. E.g. 14,800/mo -> ~4,400, the order of a page with ~40k impressions at position 8."""
+    months = int(os.environ.get("GSC_DAYS", "90")) / 30
+    gain = linkgraph.ctr_at(linkgraph.TARGET_POS) - linkgraph.ctr_at(20)
+    opp = (row.get("volume") or 0) * months * gain * linkgraph.LINE_WEIGHTS.get(line, 1.0)
+    return round(opp * (NEW_PAGE_BUMP if row.get("is_new") else 1), 2)
+
+
+def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[dict], ranges: set, last: set,
+               targets: list[dict] | None = None) -> list[dict]:
     """Scored (src, dst, kind) candidates before caps."""
     home = next((u for u in S if path(u) == "/"), None)
     targets_of = topics["page_targets"]
@@ -246,12 +261,30 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
     # 1. Boost the pages with the most to gain.
     tlist = sorted((s for s in S.values() if s.get("opportunity", 0) > 0 and s.get("indexable")),
                    key=lambda s: -s["opportunity"])[:MAX_TARGETS]
-    for t in tlist:
+    # Keyword-target-store pages are boosted even with no Google data, outside the MAX_TARGETS cap.
+    # Already in the GSC list: the higher of the two opportunities, not the sum.
+    by_path = {path(u).rstrip("/") or "/": u for u in S}
+    store = {}
+    for r in targets or []:
+        u = by_path.get(path(r["path"]).rstrip("/") or "/")
+        if u and S[u].get("indexable") and (r.get("volume") or 0) > 0:
+            opp = store_opportunity(r, S[u]["line"])
+            if u not in store or opp > store[u][0]:
+                store[u] = (opp, r)
+    tl = {norm(t["url"]): t for t in tlist}
+    for u, (opp, r) in store.items():
+        cur = tl.get(u) or S[u]
+        tl[u] = {**S[u], "opportunity": opp, "store_row": r} if opp > cur.get("opportunity", 0) else cur
+    for t in tl.values():
         dst, line = norm(t["url"]), t["line"]
         q = (t.get("top_queries") or [{}])[0]
         reason = (f"{t.get('impressions', 0):,.0f} Google impressions at avg position {t.get('position')}"
                   f" but {t.get('contextual_inlinks', 0)} in-content links"
                   + (f"; top query “{q.get('query')}”" if q.get("query") else ""))
+        if t.get("store_row"):
+            r = t["store_row"]
+            reason = (f"Keyword target: “{r['primary_keyword']}” ({r['volume']:,.0f}/mo)"
+                      + (", new page with no Google data yet" if r.get("is_new") and not t.get("impressions") else ""))
         srcs: dict[str, float] = {}
         for a, ts in targets_of.items():
             if dst in ts:
@@ -274,6 +307,8 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
                 continue  # cross-line only where the topic map says the reader wants it
             pr = S.get(s, {}).get("pagerank", 0)
             add(s, dst, "cross_line" if cross else "boost", t["opportunity"] * rel * (1 + pr / 100), reason)
+            if dst in store and cands and cands[-1]["dst"] == dst and cands[-1]["src"] == s:
+                cands[-1]["store"] = True
 
     # 2. Queries landing on the wrong page: link from where Google sends them to the right page.
     by_pair = defaultdict(list)
@@ -317,6 +352,16 @@ def select(cands: list[dict], S: dict) -> list[dict]:
 
     for c in sorted((c for c in cands if c["kind"] in ("route", "wrong_page")), key=lambda c: -c["score"]):
         take(c)
+    # Keyword-target-store pages get their best couple of links before the line quotas can crowd them out.
+    by_store = defaultdict(list)
+    for c in cands:
+        if c.get("store") and c["kind"] == "boost":
+            by_store[c["dst"]].append(c)
+    for cs in by_store.values():
+        n = 0
+        for c in sorted(cs, key=lambda c: -c["score"]):
+            if n < STORE_MIN_LINKS and take(c):
+                n += 1
     boost = [c for c in cands if c["kind"] in ("boost", "cross_line")]
     by_line = defaultdict(list)
     for c in boost:
@@ -563,7 +608,7 @@ async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, pr
         warnings += w
 
         say("Choosing link candidates")
-        chosen = select(candidates(S, P, out_ctx, topics, strength.get("wrong_page", []), ranges, last), S)
+        chosen = select(candidates(S, P, out_ctx, topics, strength.get("wrong_page", []), ranges, last, targets), S)
         by_src = defaultdict(list)
         for c_ in chosen:
             by_src[c_["src"]].append(c_)

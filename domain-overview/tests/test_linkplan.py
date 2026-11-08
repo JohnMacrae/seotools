@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from app import linkplan as lp
 
 U = lambda p: "https://serenitybrides.com" + p
@@ -106,3 +108,24 @@ def test_no_repeated_anchor_within_source(monkeypatch):
     items2 = [{**items[0]}, {**items[0], "dst": VENI["url"], "score": 1}]
     out, _, warn = _run(items2, text, {LACE["url"]: ["lace gowns"], VENI["url"]: ["Lace gowns"]}, [], monkeypatch)
     assert len(out) == 1 and any("already used" in w for w in warn)
+
+
+def test_store_target_without_gsc_data_is_boosted_and_survives_select():
+    new = {"url": U("/collections/bridal/short-wedding-dresses"), "h1": "Short", "line": "bridal",
+           "indexable": True, "top_queries": [], "opportunity": 0, "pagerank": 0}
+    others = [{"url": U(f"/blog/r{i}"), "h1": "R", "line": "bridal", "indexable": True,
+               "top_queries": [], "opportunity": 5000 - i, "pagerank": 1} for i in range(40)]
+    srcs = [{"url": U(f"/blog/a{i}"), "h1": "A", "line": "bridal", "indexable": True, "top_queries": [],
+             "opportunity": 0, "pagerank": 1} for i in range(6)]
+    S2 = {p["url"]: p for p in [new, *others, *srcs]}
+    P2 = {s["url"]: {"text": "x" * 300} for s in srcs}
+    out = defaultdict(set)
+    topics = {"topics": [], "page_targets": {s["url"]: [new["url"]] for s in srcs}}
+    row = {"path": "/collections/bridal/short-wedding-dresses", "primary_keyword": "short wedding dresses",
+           "volume": 14800, "is_new": 1, "product_line": "bridal"}
+    assert not [c for c in lp.candidates(S2, P2, out, topics, [], set(), set()) if c["dst"] == new["url"]]
+    cands = lp.candidates(S2, P2, out, topics, [], set(), set(), [row])
+    mine = [c for c in cands if c["dst"] == new["url"]]
+    assert mine and "short wedding dresses" in mine[0]["reason"] and "14,800/mo" in mine[0]["reason"]
+    assert "no Google data" in mine[0]["reason"]
+    assert len([c for c in lp.select(cands, S2) if c["dst"] == new["url"]]) >= lp.STORE_MIN_LINKS
