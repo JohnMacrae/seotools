@@ -29,6 +29,16 @@
   .sub { color: var(--muted); font-size: 12px; }
   .bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tabs button { background: var(--card); color: var(--ink); border-color: var(--line); } .tabs button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .strip { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; min-width: 120px; }
+  .stat b { display: block; font-size: 20px; } .stat span { color: var(--muted); font-size: 12px; }
+  .chip { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; margin-left: 6px; background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); white-space: nowrap; font-weight: 400; }
+  .lm h3 { margin: 0 0 4px; font-size: 14px; } .lm p { margin: 4px 0; }
+  .lm summary { cursor: pointer; color: var(--muted); margin: 8px 0 4px; }
+  .st-done { color: #2e8b57; } .st-bad { color: var(--bad); } .st-existing { color: var(--muted); }
+  th.sort { cursor: pointer; }
   code { background: var(--subtle); padding: 0 4px; border-radius: 4px; }
 </style>
 </head>
@@ -38,7 +48,9 @@
 </header>
 <main>
   <div id="err"></div>
-  <div class="card">
+  <div class="tabs"><button id="tab_t" class="on">Targets</button><button id="tab_l">Link map</button></div>
+  <div id="lm" hidden></div>
+  <div class="card" id="targets">
     <div class="bar">
       <button id="seed">Seed from doc</button>
       <button id="add" class="ghost">Add target</button>
@@ -58,7 +70,12 @@ const TIPS = {
   "Volume": "Monthly searches for the primary keyword (from the targets doc).",
   "Win basis": "What counts as winning this keyword; \"(edited)\" = changed here.",
   "Phase": "Rollout phase (1 = bridal now).",
-  "Line": "Product line: bridal, bridesmaids or MOB."
+  "Line": "Product line: bridal, bridesmaids or MOB.",
+  "From": "Supporting page that carries the link (click to sort).",
+  "Anchor": "Live link text on the supporting page (click to sort).",
+  "Planned anchor": "Anchor the link plan asked for; blank if the link is not in the plan.",
+  "Status": "Plan progress: done, wrong anchor, partial, missing; \"existing\" = live link not in the plan.",
+  "To": "Page the planned link points at."
 };
 const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 
@@ -106,6 +123,68 @@ document.getElementById("seed").onclick = wrap(async () => {
   const r = await api("POST", "/api/targets/seed");
   document.getElementById("msg").textContent = `Seeded: ${r.added} added, ${r.updated} refreshed, ${r.kept_edited} kept (edited).`;
   await load();
+});
+
+// ---- Link map ----
+let LM = null, lmSort = {};
+const FLAG_TIPS = {"needs links": "Fewer than 3 supporting pages link to this target page in body copy.",
+  "anchor monotony": "More than 60% of the contextual anchors are the identical phrase.",
+  "anchor conflict": "A link to this page uses another target's keyword and none of its own.",
+  "wrong page ranking": "Google ranks a different page of ours for these keywords.",
+  "not in plan": "The link plan has no suggestion pointing at this target page."};
+const pos = p => p == null ? "n/a" : p.toFixed(1);
+const short = u => { try { const x = new URL(u); return x.pathname + x.search || "/"; } catch (e) { return u; } };
+const a = u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(short(u))}</a>`;
+const stCls = s => s === "done" ? "st-done" : s === "existing" ? "st-existing" : "st-bad";
+function sortRows(id, rows, cols) {
+  const s = lmSort[id]; if (!s) return rows;
+  return [...rows].sort((x, y) => String(x[cols[s.i]] ?? "").localeCompare(String(y[cols[s.i]] ?? "")) * s.d);
+}
+function lmTable(id, rows, heads, cols, cell) {
+  const th = heads.map((h, i) => `<th class="sort"${tip(h)} onclick="lmSortBy('${id}',${i})">${esc(h)}</th>`).join("");
+  return `<table><tr>${th}</tr>${sortRows(id, rows, cols).map(cell).join("")}</table>`;
+}
+window.lmSortBy = (id, i) => { const s = lmSort[id]; lmSort[id] = {i, d: s && s.i === i ? -s.d : 1}; renderLM(); };
+function card(e) {
+  const flags = e.flags.map(f => `<span class="chip" title="${esc(FLAG_TIPS[f] || "")}">${esc(f)}</span>`).join("");
+  const id = "c" + e.target_page;
+  let gscLine = `GSC position: target page ${pos(e.gsc_target_page_position)}`;
+  if (e.wrong_page) gscLine += ` &middot; top page ${a(e.gsc_top_page)} at ${pos(e.gsc_top_page_position)}`;
+  const ctx = e.contextual.length ? lmTable(id, e.contextual, ["From", "Anchor", "Planned anchor", "Status"],
+    ["src", "anchor", "planned_anchor", "status"],
+    c => `<tr><td>${a(c.src)}</td><td>${esc(c.anchor)}</td><td>${esc(c.planned_anchor ?? "")}</td><td class="${stCls(c.status)}">${esc(c.status)}</td></tr>`)
+    : `<p class="sub">No contextual links in.</p>`;
+  const todo = e.planned_missing.length ? `<details><summary>${e.planned_missing.length} planned link${e.planned_missing.length === 1 ? "" : "s"} not live</summary>
+    <table><tr><th${tip("From")}>From</th><th${tip("Planned anchor")}>Planned anchor</th><th${tip("Status")}>Status</th></tr>${e.planned_missing.map(m =>
+    `<tr><td>${a(m.src)}</td><td>${esc(m.planned_anchor ?? "")}</td><td class="st-bad">${esc(m.status)}</td></tr>`).join("")}</table></details>` : "";
+  const tpl = e.template.length ? `<p class="sub">Template links: ${e.template.map(t => `${esc(t.anchor)} &times;${t.src_count}`).join(", ")}</p>` : "";
+  const conf = e.conflicts.length ? `<p class="sub"><b>Anchor conflicts:</b></p><ul class="sub">${e.conflicts.map(c =>
+    `<li>${a(c.src)}: "${esc(c.anchor)}" contains "${esc(c.keyword)}" (target #${esc(c.other_target_id)})${c.count > 1 ? ` &times;${c.count}` : ""}</li>`).join("")}</ul>` : "";
+  return `<div class="card lm"><h3>${esc(e.keywords.join("; "))} &rarr; ${a(e.target_page)}${flags}</h3>
+    <p class="sub">${esc(e.product_line ?? "")} &middot; crawl ${esc(e.crawl_status)} &middot; ${gscLine}</p>${ctx}${todo}${tpl}${conf}</div>`;
+}
+function renderLM() {
+  const d = LM, el = document.getElementById("lm"), s = d.summary, c = d.plan_counts;
+  const stat = (n, l) => `<div class="stat"><b>${esc(n)}</b><span>${esc(l)}</span></div>`;
+  const noPlan = d.plan_id == null;
+  el.innerHTML = `<div class="strip">${stat(s.targets, "targets")}${stat(s.needs_links, "need links")}${stat(s.conflicts, "with conflicts")}
+    ${stat(s.wrong_page, "wrong page")}${stat(noPlan ? "no plan" : `${c.done}/${d.plan_total}`, "plan done")}</div>
+    <p class="sub">Crawl ${esc(d.crawl_id)} &middot; plan ${esc(d.plan_id ?? "none")} (checked on crawl ${esc(d.checked_crawl_id ?? "n/a")}) &middot; Search Console ${d.gsc ? esc(d.gsc.start_date) + " to " + esc(d.gsc.end_date) : "not fetched"}</p>
+    ${d.entries.map(card).join("")}
+    <div class="card"><details><summary>Other links (${d.other_links.length}): planned links to pages that are not target pages</summary>
+    ${d.other_links.length ? `<table><tr><th${tip("From")}>From</th><th${tip("To")}>To</th><th${tip("Planned anchor")}>Planned anchor</th><th${tip("Status")}>Status</th></tr>${d.other_links.map(o =>
+      `<tr><td>${a(o.src)}</td><td>${a(o.dst)}</td><td>${esc(o.planned_anchor ?? "")}</td><td class="${stCls(o.status)}">${esc(o.status)}</td></tr>`).join("")}</table>` : '<p class="sub">None.</p>'}
+    </details></div>`;
+}
+const showTab = lm => {
+  document.getElementById("lm").hidden = !lm; document.getElementById("targets").hidden = lm;
+  document.getElementById("tab_l").classList.toggle("on", lm); document.getElementById("tab_t").classList.toggle("on", !lm);
+};
+document.getElementById("tab_t").onclick = () => showTab(false);
+document.getElementById("tab_l").onclick = wrap(async () => {
+  showTab(true);
+  if (!LM) { document.getElementById("lm").innerHTML = '<p class="sub">Loading...</p>'; LM = await api("GET", "/api/linkmap"); }
+  renderLM();
 });
 wrap(load)();
 </script>

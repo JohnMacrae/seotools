@@ -48,6 +48,8 @@ Tests (no host Python needed; installs `requirements-dev.txt` in a throwaway pyt
 cd domain-overview && docker compose run --rm tests
 ```
 
+Once per clone, enable the pre-commit hook that runs these tests: `git config core.hooksPath .githooks`
+
 ## Deploy on dnas
 
 ```bash
@@ -58,6 +60,7 @@ docker compose up -d --build
 ```
 
 Open http://dnas:8095 (or over Tailscale at http://100.98.167.107:8095).
+Pages: `/` overview, `/compare`, `/linking`, `/targets`, `/mappack` (source in `app/static/*.html`). `/targets` → **Link map** tab shows each keyword target's contextual, planned and template links with flags (`GET /api/linkmap[?crawl=ID]`). After `up -d --build`, wait for the container to answer before checking pages.
 To put it behind the Pi's Caddy, add a site block that reverse-proxies to `100.98.167.107:8095`.
 
 Try it without credits first: set `DFS_MOCK=1` in `.env` and restart.

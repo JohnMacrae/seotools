@@ -15,7 +15,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, gsc, health, linkgraph, mappack, pagegap, progress, targets
+from . import compare, crawl, dfs, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, targets
+from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
 TARGETS_DOC = Path(os.environ.get("TARGETS_DOC", "/docs/keyword-targets.md"))
@@ -658,6 +659,50 @@ def check_plan(plan_id: int, crawl: int | None = None):
 def plan_progress(plan_id: int):
     with closing(db()) as con:
         return _progress(con, plan_id)
+
+
+@app.get("/api/linkmap")
+def link_map(crawl: int | None = None):
+    """Link map: every keyword target with its contextual links in, plan status, template links and flags."""
+    with closing(db()) as con:
+        if crawl is None:
+            host = gsc.site_host()
+            row = None
+            if host:
+                row = con.execute("SELECT id FROM crawls WHERE status='done' AND (domain=? OR domain=?) ORDER BY id DESC LIMIT 1",
+                                  (host, host.removeprefix("www."))).fetchone()
+            row = row or con.execute("SELECT id FROM crawls WHERE status='done' ORDER BY id DESC LIMIT 1").fetchone()
+            if not row:
+                raise HTTPException(404, "No finished crawl")
+            crawl = row["id"]
+        crawl_row = con.execute("SELECT * FROM crawls WHERE id=?", (crawl,)).fetchone()
+        if not crawl_row:
+            raise HTTPException(404, "Crawl not found")
+        pages, links = _crawl_data(con, crawl)
+        host = urlsplit(pages[0]["url"]).hostname if pages else crawl_row["domain"]
+        fetch = con.execute("SELECT * FROM gsc_fetches ORDER BY id DESC LIMIT 1").fetchone()
+        gp, gr = gsc.load(con, fetch["id"], host) if fetch else ([], [])
+        S = {lp_norm(p["url"]): {**p, "url": lp_norm(p["url"])} for p in linkgraph.strength(pages, links, gp, gr)["pages"]}
+        by_url = {lp_norm(p["url"]): p for p in pages}
+        for u, sp in S.items():
+            sp.setdefault("h1", by_url.get(u, {}).get("h1"))
+        ranges = {lp_norm(u) for u in linkgraph.last_stock(links)["ranges"]}
+        plan = con.execute("SELECT p.id FROM plans p JOIN crawls c ON c.id=p.crawl_id WHERE p.status='done' AND p.crawl_id<=? "
+                           "AND c.domain=? ORDER BY p.id DESC LIMIT 1", (crawl, crawl_row["domain"])).fetchone()
+        prog = _progress(con, plan["id"]) if plan else None
+        result = linkmap.build(targets.list_all(con), pages, links, S, ranges, prog["suggestions"] if prog else [], gr,
+                               has_plan=bool(prog))
+    ents = result["entries"]
+    return {
+        "crawl_id": crawl, "plan_id": prog["plan_id"] if prog else None,
+        "checked_crawl_id": prog["checked_crawl_id"] if prog else None,
+        "plan_counts": prog["counts"] if prog else None, "plan_total": prog["total"] if prog else 0,
+        "gsc": {"fetch_id": fetch["id"], "fetched_at": fetch["fetched_at"], "start_date": fetch["start_date"],
+                "end_date": fetch["end_date"]} if fetch else None,
+        "summary": {"targets": len(ents), "needs_links": sum("needs links" in e["flags"] for e in ents),
+                    "conflicts": sum(bool(e["conflicts"]) for e in ents), "wrong_page": sum(e["wrong_page"] for e in ents)},
+        "entries": ents, "other_links": result["other_links"],
+    }
 
 
 @app.get("/targets")
