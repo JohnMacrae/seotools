@@ -13,7 +13,9 @@ services:
 
   # Test runner: `docker compose run --rm tests` (not started by `up`)
   tests:
-    image: python:3.12-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
     profiles: ["test"]
     working_dir: /srv
     volumes:
