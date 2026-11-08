@@ -85,10 +85,63 @@ const path = u => { try { const x = new URL(u); return x.pathname + x.search; } 
 const link = u => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(path(u))}</a>` : "—";
 const TABS = ["Health", "Strength", "Topic map", "Template rules", "Link to-dos", "Pages to build", "Progress"];
 let timer = null;
+const TIPS = {
+  "crawls|Pages": "Pages fetched by our crawler.",
+  "str|Page": "Crawled URL.",
+  "str|Line": "Product line guessed from URL, title and links.",
+  "str|PR": "Internal PageRank 0–100 (log scale) from our crawl's links. Only indexable pages.",
+  "str|Contextual inlinks": "Links from body content of other pages (crawl).",
+  "str|Boilerplate inlinks": "Links from nav, header, footer (crawl).",
+  "str|Clicks": "Clicks from Google, last 90 days (GSC).",
+  "str|Impressions": "Times shown in Google, last 90 days (GSC).",
+  "str|Avg position": "Impression-weighted average position, GSC.",
+  "str|Top query": "Query with most impressions for this page, GSC.",
+  "str|Opportunity": "Extra clicks if queries at positions 4–30 reached #3, ÷ (1 + PR/10), × line weight (bridal 1, MOB 0.6, bridesmaids 0.4). Higher = link here first.",
+  "wrong|Query": "Search query (GSC) where a page from the wrong product line ranks best.",
+  "wrong|Ranking page": "Page currently ranking best for the query (GSC).",
+  "wrong|Its line": "Product line of the ranking page.",
+  "wrong|Impressions": "Impressions for the query, last 90 days (GSC).",
+  "wrong|Position": "Average position of the ranking page for the query (GSC).",
+  "wrong|Better page": "Line hub that matches the query's wording.",
+  "old|URL": "URL still getting impressions in GSC, but not a live 200 page in the crawl.",
+  "old|Impressions": "Impressions, last 90 days (GSC).",
+  "old|Clicks": "Clicks, last 90 days (GSC).",
+  "old|Position": "Average position (GSC).",
+  "old|Crawl status": "What the crawl got for this URL (e.g. 404, redirect), or not crawled.",
+  "sect|Section": "First part of the URL path.",
+  "sect|Pages": "Crawled pages in this section.",
+  "sect|200 OK": "Pages in this section that returned 200 OK.",
+  "depth|Depth": "Clicks from the homepage (crawl). \"not linked\" = unreachable.",
+  "iss|Reason": "Why the page is excluded (noindex / canonical elsewhere).",
+  "iss|Depth": "Clicks from the homepage (crawl). \"not linked\" = unreachable.",
+  "iss|Pages with title": "How many pages share this title.",
+  "iss|Inlinks": "Contextual inlinks (crawl).",
+  "lnk|From": "Page containing the link.",
+  "lnk|To": "Link target.",
+  "lnk|Anchor": "Link text.",
+  "lnk|Status": "HTTP status when the crawl fetched the target.",
+  "lnk|Redirects to": "Where the target redirects. Link straight there instead.",
+  "rules|Rule": "Site-wide internal-link rule, checked on every page it applies to.",
+  "rules|Status": "pass = all pages comply; partial = some; fail = none.",
+  "rules|Failing / total": "Pages breaking the rule / pages it applies to.",
+  "rules|Fix": "What to change in the template.",
+  "sugg|Planned anchor": "Anchor text the plan asked for.",
+  "sugg|Live anchor": "Anchor(s) actually found on the source page at last crawl.",
+  "sugg|Status": "done / wrong anchor / partial (link only in boilerplate) / missing / gone (page no longer live).",
+  "sugg|Search Console, target page": "Target page's GSC clicks/impressions/position, 28 days before vs after marking done.",
+  "built|Proposed page": "New page suggested by the gap plan.",
+  "built|Slug": "Planned URL, or the live URL once built.",
+  "built|Status": "Built = a live 200 page with this slug was found in the crawl.",
+  "gap|Primary keyword": "Main keyword the new page should target.",
+  "gap|Monthly volume": "DFS volume; \"~\" = estimated from GSC impressions ÷ 3 months.",
+  "gap|Sources": "Where the idea came from: GSC queries, competitor pages, DFS keyword ideas.",
+  "gap|Why": "Reason given by the planner."
+};
+const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 
 async function home() {
   const rows = await fetch("api/crawls?domain=" + encodeURIComponent($("#domain").value)).then(r => r.ok ? r.json() : []);
-  $("#app").innerHTML = `<div class="card"><h2>Past crawls</h2>${rows.length ? `<table><tr><th>Domain</th><th>Started</th><th>Status</th><th class="num">Pages</th></tr>
+  $("#app").innerHTML = `<div class="card"><h2>Past crawls</h2>${rows.length ? `<table><tr><th>Domain</th><th>Started</th><th>Status</th><th class="num"${tip("crawls|Pages")}>Pages</th></tr>
     ${rows.map(r => `<tr><td><a href="?crawl=${r.id}">${esc(r.domain)}</a></td><td>${esc(r.started_at.replace("T", " "))}</td>
       <td class="${r.status === "error" ? "bad" : ""}">${esc(r.status)}${r.error ? ` — ${esc(r.error)}` : ""}</td><td class="num">${fmt(r.pages)}</td></tr>`).join("")}</table>`
     : `<div class="sub">No crawls yet. Click "Crawl now".</div>`}</div>`;
@@ -157,10 +210,10 @@ function strengthTab(s) {
     <div class="card"><h2>Pages <small class="sub">PR is a 0-100 log scale. Opportunity = extra clicks if queries at positions 4-30 reached position 3, divided by (1 + PR/10). Click a row for its top queries.</small></h2>
       <div class="scroll" style="max-height:640px">${pagesTable(s)}</div></div>
     <div class="card"><h2>Wrong page ranking <small class="sub">${fmt(s.wrong_page.length)} queries</small></h2>
-      ${s.wrong_page.length ? `<div class="scroll"><table class="sortable"><tr><th>Query</th><th>Ranking page</th><th>Its line</th><th class="num">Impressions</th><th class="num">Position</th><th>Better page</th></tr>
+      ${s.wrong_page.length ? `<div class="scroll"><table class="sortable"><tr><th${tip("wrong|Query")}>Query</th><th${tip("wrong|Ranking page")}>Ranking page</th><th${tip("wrong|Its line")}>Its line</th><th class="num"${tip("wrong|Impressions")}>Impressions</th><th class="num"${tip("wrong|Position")}>Position</th><th${tip("wrong|Better page")}>Better page</th></tr>
       ${s.wrong_page.map(w => `<tr><td>${esc(w.query)}</td><td class="wrap">${link(w.page)}</td><td>${esc(LINE_NAMES[w.page_line])}</td><td class="num">${fmt(w.impressions)}</td><td class="num">${w.position}</td><td class="wrap">${link(w.suggested)}</td></tr>`).join("")}</table></div>` : `<div class="sub good">None.</div>`}</div>
     <div class="card"><h2>Old URLs still in Google (redirect candidates) <small class="sub">${fmt(s.gsc_unmatched.length)} URLs not a 200 page in this crawl</small></h2>
-      ${s.gsc_unmatched.length ? `<div class="scroll"><table class="sortable"><tr><th>URL</th><th class="num">Impressions</th><th class="num">Clicks</th><th class="num">Position</th><th class="num">Crawl status</th></tr>
+      ${s.gsc_unmatched.length ? `<div class="scroll"><table class="sortable"><tr><th${tip("old|URL")}>URL</th><th class="num"${tip("old|Impressions")}>Impressions</th><th class="num"${tip("old|Clicks")}>Clicks</th><th class="num"${tip("old|Position")}>Position</th><th class="num"${tip("old|Crawl status")}>Crawl status</th></tr>
       ${s.gsc_unmatched.map(u => `<tr><td class="wrap">${link(u.page)}</td><td class="num">${fmt(u.impressions)}</td><td class="num">${fmt(u.clicks)}</td><td class="num">${u.position}</td><td class="num">${u.status ?? "not crawled"}</td></tr>`).join("")}</table></div>` : `<div class="sub good">None.</div>`}</div>`;
 }
 
@@ -173,7 +226,7 @@ function pagesTable(s) {
     if (y == null || y === "") return -1;
     return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * dir;
   }).slice(0, 500);
-  return `<table><tr>${COLS.map(([k, n, num]) => `<th data-sort="${k}" ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
+  return `<table><tr>${COLS.map(([k, n, num]) => `<th data-sort="${k}"${tip("str|"+n)} ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
     ${rows.map((r, i) => `<tr class="row" data-i="${i}"><td class="wrap">${link(r.url)}</td><td>${esc(LINE_NAMES[r.line])}</td><td class="num">${r.indexable ? r.pagerank.toFixed(1) : "—"}</td>
       <td class="num">${fmt(r.contextual_inlinks)}</td><td class="num">${fmt(r.boilerplate_inlinks)}</td><td class="num">${fmt(r.clicks)}</td><td class="num">${fmt(r.impressions)}</td>
       <td class="num">${r.position ?? "—"}</td><td>${esc(r.top_queries[0]?.query ?? "")}</td><td class="num">${r.discontinued ? `${r.opportunity ? r.opportunity.toFixed(1) : "—"} <span class="sub" title="Discontinued range, last stock only: linkable while unsold, links are temporary">last stock</span>` : r.opportunity ? r.opportunity.toFixed(1) : "—"}${!r.discontinued && r.range_rtw && r.range_rtw[0] ? ` <span class="sub" title="Dresses in this range on a Ready to wear page">${r.range_rtw[0]}/${r.range_rtw[1]} last stock</span>` : ""}</td></tr>
@@ -259,7 +312,7 @@ function renderPlanTab() {
 function rulesView(d) {
   const rules = d.template_rules || [];
   if (!rules.length) return `<div class="sub">No template rules in this plan.</div>`;
-  return `<div class="card"><h2>Template rules</h2><table><tr><th>Rule</th><th>Status</th><th class="num">Failing / total</th><th>Fix</th></tr>
+  return `<div class="card"><h2>Template rules</h2><table><tr><th${tip("rules|Rule")}>Rule</th><th${tip("rules|Status")}>Status</th><th class="num"${tip("rules|Failing / total")}>Failing / total</th><th${tip("rules|Fix")}>Fix</th></tr>
     ${rules.map((r, i) => `<tr class="row" data-rule="${i}"><td><b>${esc(r.name)}</b><div class="sub">${esc(r.description)}</div></td>
       <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td class="num">${fmt(r.failing)} / ${fmt(r.total)}</td><td>${esc(r.fix)}</td></tr>
       <tr class="more" hidden><td colspan="4">${(r.examples || []).length ? `<table><tr><th>Page</th><th>Detail</th></tr>${r.examples.map(x => `<tr><td class="wrap">${link(x.url)}</td><td>${esc(x.detail)}</td></tr>`).join("")}</table>` : `<span class="sub">No examples.</span>`}</td></tr>`).join("")}</table></div>`;
@@ -391,7 +444,7 @@ function renderGaps() {
   h += (d.warnings || []).slice(0, 8).map(w => `<div class="err">${esc(w)}</div>`).join("");
   h += `<div class="chips">${chip("all", "All", d.pages.length)}${Object.keys(LINE_NAMES).map(k => chip(k, LINE_NAMES[k], lines[k] || 0)).join("")}</div>
     <div class="card"><h2>Pages to build <small class="sub">Score = monthly volume × (1 − difficulty) × line weight, ×1.5 when Google already shows us for it. "~" = estimated from Search Console impressions ÷ 3. Click a row for details.</small></h2>
-    ${rows.length ? `<div class="scroll" style="max-height:700px"><table><tr>${GCOLS.map(([k, n, num]) => `<th data-gsort="${k}" ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
+    ${rows.length ? `<div class="scroll" style="max-height:700px"><table><tr>${GCOLS.map(([k, n, num]) => `<th data-gsort="${k}"${tip("gap|"+n)} ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
     ${rows.map(r => `<tr class="row" data-gap="1"><td><b>${esc(r.title)}</b><div class="sub">${esc(r.page_type)}</div></td><td class="wrap">${esc(r.slug)}</td><td>${esc(LINE_NAMES[r.line] || r.line)}</td>
       <td>${esc(r.primary_keyword)}</td><td class="num">${r.volume_is_proxy ? "~" : ""}${fmt(r.volume)}</td><td>${badges(r.sources)}</td><td>${esc(r.why)}</td></tr>
       <tr class="more" hidden><td colspan="7">
@@ -460,13 +513,13 @@ function renderProgress() {
   h += p.checked_crawl_id ? `<div class="sub" style="margin-bottom:10px">Checked against crawl #${p.checked_crawl_id}</div>` : `<div class="sub" style="margin-bottom:10px">Not checked yet.</div>`;
   h += `<div class="grid tiles">${tile("Done", c.done, "Contextual link in place")}${tile("Wrong anchor", c["wrong anchor"], "Linked in content, different anchor text")}${tile("Partial", c.partial, "Linked, but not in the content")}${tile("Missing", c.missing, "No link yet")}
     ${tile("Gone", c.gone, "Source or target no longer a 200 page")}${tile("% done", p.pct_done, `of ${fmt(p.total)} links`)}</div>
-    <div class="card"><h2>Suggestions</h2><div class="scroll" style="max-height:640px"><table class="sortable"><tr><th>From</th><th>To</th><th>Planned anchor</th><th>Live anchor</th><th>Status</th><th>Search Console, target page</th></tr>
+    <div class="card"><h2>Suggestions</h2><div class="scroll" style="max-height:640px"><table class="sortable"><tr><th>From</th><th>To</th><th${tip("sugg|Planned anchor")}>Planned anchor</th><th${tip("sugg|Live anchor")}>Live anchor</th><th${tip("sugg|Status")}>Status</th><th>Search Console, target page</th></tr>
     ${p.suggestions.map(s => `<tr><td class="wrap">${link(s.src)}</td><td class="wrap">${link(s.dst)}</td><td>${esc(s.planned_anchor || "")}</td>
       <td>${s.anchor_data === false ? `<span class="sub">not recorded</span>` : (s.live_anchors || []).map(a => esc(a || "(no text)")).join("<br>")}</td>
       <td><span class="badge ${ST_CLASS[s.status] || ""}">${esc(s.status)}</span>${s.done_at ? `<div class="sub">done ${esc(s.done_at.slice(0, 10))}</div>` : ""}</td>
       <td>${s.status === "done" ? gscCell(s.gsc) : ""}</td></tr>`).join("")}</table></div></div>
     <div class="card"><h2>Pages built <small class="sub">proposed pages from the latest gap run that now exist</small></h2>
-    ${(p.built || []).length ? `<table><tr><th>Proposed page</th><th>Slug</th><th>Status</th></tr>${p.built.map(b => `<tr><td>${esc(b.title)}</td><td class="wrap">${b.url ? link(b.url) : esc(b.slug)}</td>
+    ${(p.built || []).length ? `<table><tr><th${tip("built|Proposed page")}>Proposed page</th><th${tip("built|Slug")}>Slug</th><th${tip("built|Status")}>Status</th></tr>${p.built.map(b => `<tr><td>${esc(b.title)}</td><td class="wrap">${b.url ? link(b.url) : esc(b.slug)}</td>
       <td><span class="badge ${b.built ? "pass" : ""}">${b.built ? "built" : "not yet"}</span></td></tr>`).join("")}</table>` : `<div class="sub">${p.checked_crawl_id ? "No page-gap run to compare with." : "Check against a crawl first."}</div>`}</div>`;
   $("#tab").innerHTML = h;
 }
@@ -493,9 +546,9 @@ function healthTab(h) {
       ${tile("Depth > 3", h.deep_pages.count, "Clicks from the homepage", true)}
     </div>
     <div class="grid two">
-      <div class="card"><h2>Pages by section</h2><table class="sortable"><tr><th>Section</th><th class="num">Pages</th><th class="num">200 OK</th></tr>
+      <div class="card"><h2>Pages by section</h2><table class="sortable"><tr><th${tip("sect|Section")}>Section</th><th class="num"${tip("sect|Pages")}>Pages</th><th class="num"${tip("sect|200 OK")}>200 OK</th></tr>
         ${h.sections.map(s => `<tr><td>${esc(s.section)}</td><td class="num">${fmt(s.pages)}</td><td class="num">${fmt(s.ok)}</td></tr>`).join("")}</table></div>
-      <div class="card"><h2>Click depth</h2><table><tr><th>Depth</th><th class="num">Pages</th><th style="width:55%"></th></tr>
+      <div class="card"><h2>Click depth</h2><table><tr><th${tip("depth|Depth")}>Depth</th><th class="num">Pages</th><th style="width:55%"></th></tr>
         ${h.depth_histogram.map(d => `<tr><td>${d.depth ?? "not linked"}</td><td class="num">${fmt(d.pages)}</td>
           <td><div class="bar" style="width:${d.pages / maxDepth * 100}%"></div></td></tr>`).join("")}</table>
         <div class="note">"Not linked" pages are in the sitemap but no crawled page links to them.</div></div>
@@ -520,12 +573,12 @@ function issue(title, b, note, render) {
 }
 function pageTable(rows) {
   const k = rows[0] || {};
-  return `<table class="sortable"><tr><th>Page</th><th>Title</th>${"reason" in k ? "<th>Reason</th>" : ""}${"depth" in k ? '<th class="num">Depth</th>' : ""}${"count" in k ? '<th class="num">Pages with title</th>' : ""}${"inlinks" in k ? '<th class="num">Inlinks</th>' : ""}</tr>
+  return `<table class="sortable"><tr><th>Page</th><th>Title</th>${"reason" in k ? `<th${tip("iss|Reason")}>Reason</th>` : ""}${"depth" in k ? `<th class="num"${tip("iss|Depth")}>Depth</th>` : ""}${"count" in k ? `<th class="num"${tip("iss|Pages with title")}>Pages with title</th>` : ""}${"inlinks" in k ? `<th class="num"${tip("iss|Inlinks")}>Inlinks</th>` : ""}</tr>
     ${rows.map(r => `<tr><td class="wrap">${link(r.url)}</td><td>${esc(r.title)}</td>${"reason" in k ? `<td>${esc(r.reason)}${r.canonical ? ` → ${link(r.canonical)}` : ""}</td>` : ""}${"depth" in k ? `<td class="num">${r.depth}</td>` : ""}${"count" in k ? `<td class="num">${r.count}</td>` : ""}${"inlinks" in k ? `<td class="num">${r.inlinks}</td>` : ""}</tr>`).join("")}</table>`;
 }
 function linkTable(rows) {
   const red = rows[0] && "redirect_to" in rows[0];
-  return `<table class="sortable"><tr><th>From</th><th>To</th><th>Anchor</th><th class="num">Status</th>${red ? "<th>Redirects to</th>" : ""}</tr>
+  return `<table class="sortable"><tr><th${tip("lnk|From")}>From</th><th${tip("lnk|To")}>To</th><th${tip("lnk|Anchor")}>Anchor</th><th class="num"${tip("lnk|Status")}>Status</th>${red ? `<th${tip("lnk|Redirects to")}>Redirects to</th>` : ""}</tr>
     ${rows.map(r => `<tr><td class="wrap">${link(r.src)}</td><td class="wrap">${link(r.dst)}</td><td>${esc(r.anchor)}</td><td class="num">${r.status ?? "error"}</td>${red ? `<td class="wrap">${link(r.redirect_to)}</td>` : ""}</tr>`).join("")}</table>`;
 }
 

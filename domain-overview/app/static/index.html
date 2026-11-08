@@ -87,6 +87,21 @@ const money = n => n == null ? "—" : "£" + Number(n).toLocaleString("en-GB", 
 const short = u => { try { const x = new URL(u); return x.pathname + x.search || "/"; } catch { return u || ""; } };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let charts = [], state = null;
+const TIPS = {
+  "Keyword": "Search term the domain ranks for (DFS).",
+  "Pos": "Google organic position (DFS). Arrow = change since DFS's previous check.",
+  "Volume": "Average monthly Google searches (DFS).",
+  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DFS).",
+  "CPC": "Average Google Ads cost per click (DFS).",
+  "kw|Traffic": "Estimated monthly visits from this keyword = volume × CTR at this position (DFS).",
+  "URL": "The page that ranks (DFS).",
+  "Domain": "Site competing for the same keywords (DFS).",
+  "Common kw": "Keywords both sites rank for (DFS).",
+  "Avg pos": "Competitor's average position on the shared keywords (DFS).",
+  "Keywords": "Total keywords this site/page ranks for (DFS).",
+  "Traffic": "Estimated monthly organic visits (DFS)."
+};
+const tip = (id, l) => { const t = TIPS[id + "|" + l] || TIPS[l]; return t ? ` title="${esc(t)}"` : ""; };
 
 function params() { return new URLSearchParams(location.search); }
 
@@ -175,7 +190,7 @@ function render(d, hist) {
 const COLS = {};
 function table(id, cols, rows) {
   COLS[id] = cols;
-  return `<table id="t-${id}"><thead><tr>${cols.map(([k, l, c]) => `<th data-sort="${k}" data-t="${id}" class="${c || ""}">${l}</th>`).join("")}</tr></thead>
+  return `<table id="t-${id}"><thead><tr>${cols.map(([k, l, c]) => `<th data-sort="${k}" data-t="${id}" class="${c || ""}"${tip(id, l)}>${l}</th>`).join("")}</tr></thead>
     <tbody>${rowsHtml(id, rows)}</tbody></table>`;
 }
 function rowsHtml(id, rows) {

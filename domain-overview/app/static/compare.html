@@ -94,10 +94,35 @@ const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const path = u => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u || ""; } };
 let S = null;
+const TIPS = {
+  "Your domain": "The domain compared.",
+  "Competitors": "Domains it was compared against.",
+  "When": "When the comparison ran.",
+  "Cost": "DataForSEO spend for that run.",
+  "Domain rank": "DFS backlink authority score 0–1000 for the whole site.",
+  "Referring domains": "Distinct sites linking to this site (DFS backlinks).",
+  "of which nofollow": "Referring domains whose links are all nofollow.",
+  "Backlinks": "Total links pointing at the site (DFS backlinks).",
+  "Link spam score": "DFS estimate of how spammy the backlink profile is (0–100%).",
+  "audit": "DFS on-page crawl of that site's homepage.",
+  "You": "Your Google position for this keyword, and the page that ranks (DFS).",
+  "competitor": "Their Google position and ranking page (DFS).",
+  "Cause": "off-page = they have ≥1.25× your domain rank or ≥2× the page's referring domains; else on-page (content/relevance).",
+  "Why": "The numbers behind Cause.",
+  "Volume": "Average monthly Google searches (DFS).",
+  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DFS).",
+  "Their best page": "Competitor's highest-ranking page for the keyword.",
+  "Referring site": "Site linking to competitors but not to you (DFS).",
+  "Links to": "Which competitors it links to.",
+  "Linking page": "The page holding the link, its target and anchor.",
+  "Site rank": "The referring site's DFS domain rank 0–1000.",
+  "Spam score": "Referring site's DFS spam score; ≥50% hidden."
+};
+const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 
 async function home() {
   const rows = await fetch("api/comparisons").then(r => r.json());
-  $("#app").innerHTML = `<div class="card"><h2>Past comparisons</h2>${rows.length ? `<table><tr><th>Your domain</th><th>Competitors</th><th>When</th><th class="num">Cost</th></tr>
+  $("#app").innerHTML = `<div class="card"><h2>Past comparisons</h2>${rows.length ? `<table><tr><th${tip("Your domain")}>Your domain</th><th${tip("Competitors")}>Competitors</th><th${tip("When")}>When</th><th class="num"${tip("Cost")}>Cost</th></tr>
     ${rows.map(r => `<tr><td><a href="?id=${r.id}&d=${encodeURIComponent(r.domain)}&c=${encodeURIComponent(r.competitors)}&l=${r.location_code}">${esc(r.domain)}</a></td>
       <td>${esc(r.competitors.split(",").join(", "))}</td><td>${r.fetched_at.replace("T", " ")}</td><td class="num">$${(r.cost || 0).toFixed(3)}</td></tr>`).join("")}</table>`
     : `<div class="sub">None yet. Enter your domain and up to 3 competitors above. Tip: run a Domain overview of your site first and its competitors appear here as suggestions.</div>`}</div>`;
@@ -151,7 +176,7 @@ function render() {
     </div>
 
     <div class="card"><h2>Authority (off-page)</h2>
-      <table class="sortable"><tr><th>Domain</th><th class="num">Domain rank</th><th class="num">Referring domains</th><th class="num">of which nofollow</th><th class="num">Backlinks</th><th class="num">Link spam score</th></tr>
+      <table class="sortable"><tr><th>Domain</th><th class="num"${tip("Domain rank")}>Domain rank</th><th class="num"${tip("Referring domains")}>Referring domains</th><th class="num"${tip("of which nofollow")}>of which nofollow</th><th class="num"${tip("Backlinks")}>Backlinks</th><th class="num"${tip("Link spam score")}>Link spam score</th></tr>
       ${S.sites.map(s => `<tr class="${s.is_you ? "you" : ""}"><td>${esc(s.domain)}${s.is_you ? " (you)" : ""}</td>
         <td class="num">${fmt(s.rank)}</td><td class="num">${fmt(s.referring_domains)}</td><td class="num">${fmt(s.referring_domains_nofollow)}</td>
         <td class="num">${fmt(s.backlinks)}</td><td class="num">${s.spam_score == null ? "—" : s.spam_score + "%"}</td></tr>`).join("")}</table>
@@ -203,7 +228,7 @@ function onpageTable() {
     ["Load time (ms)", s => fmt(s?.load_ms)],
     ["Issues", s => s?.issues?.length ? `<span class="issues">${s.issues.map(esc).join("<br>")}</span>` : (s ? "None found" : "—")],
   ];
-  return `<table><tr><th></th>${sites.map(s => `<th>${esc(s.domain)}${s.is_you ? " (you)" : ""}</th>`).join("")}</tr>
+  return `<table><tr><th></th>${sites.map(s => `<th${tip("audit")}>${esc(s.domain)}${s.is_you ? " (you)" : ""}</th>`).join("")}</tr>
     ${rows.map(([label, f]) => `<tr><td><strong>${label}</strong></td>${sites.map(s => `<td class="wrap">${s.onpage ? f(s.onpage) : (label === "Title" ? "Could not fetch" : "")}</td>`).join("")}</tr>`).join("")}</table>`;
 }
 
@@ -215,7 +240,7 @@ function posCell(p, you) {
 function sharedTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table class="sortable"><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th><th class="num">You</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Cause</th><th>Why</th></tr>
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${tip("Volume")}>Volume</th><th class="num"${tip("KD")}>KD</th><th class="num"${tip("You")}>You</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Cause")}>Cause</th><th${tip("Why")}>Why</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.keyword)}<div class="sub">${r.you.url ? `you: <a href="${esc(r.you.url)}" target="_blank" rel="noopener">${esc(path(r.you.url))}</a>` : ""}</div></td>
       <td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
       <td class="num"><strong>${r.you.position ?? "—"}</strong></td>
@@ -226,7 +251,7 @@ function sharedTable(rows) {
 function missingTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table class="sortable"><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Their best page</th></tr>
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${tip("Volume")}>Volume</th><th class="num"${tip("KD")}>KD</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Their best page")}>Their best page</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
       ${comps.map(c => `<td class="num">${r.competitors[c]?.position ?? "—"}</td>`).join("")}
       <td class="wrap">${r.best_url ? `<a href="${esc(r.best_url)}" target="_blank" rel="noopener">${esc(r.best_url.replace(/^https?:\/\//, ""))}</a>` : ""}</td></tr>`).join("")}</table>`;
@@ -240,7 +265,7 @@ function linkgapTable() {
     return `<div><a href="${esc(p.url_from)}" target="_blank" rel="noopener">${short(p.url_from)}</a>
       <span class="sub">→ ${short(p.url_to)}${p.anchor ? ` · “${esc(p.anchor)}”` : ""}${p.dofollow === false ? " · nofollow" : ""}</span></div>`;
   }).join("");
-  return `<table class="sortable"><tr><th>Referring site</th><th>Links to</th><th>Linking page</th><th class="num">Site rank</th><th class="num">Spam score</th></tr>
+  return `<table class="sortable"><tr><th${tip("Referring site")}>Referring site</th><th${tip("Links to")}>Links to</th><th${tip("Linking page")}>Linking page</th><th class="num"${tip("Site rank")}>Site rank</th><th class="num"${tip("Spam score")}>Spam score</th></tr>
     ${S.linkgap.map(r => `<tr><td><a href="https://${esc(r.domain)}" target="_blank" rel="noopener">${esc(r.domain)}</a></td>
       <td>${r.links_to.map(esc).join(", ")}</td><td class="wrap">${pageCell(r)}</td><td class="num">${fmt(r.rank)}</td><td class="num">${r.spam_score}%</td></tr>`).join("")}</table>`;
 }

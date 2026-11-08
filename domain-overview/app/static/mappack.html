@@ -53,6 +53,32 @@
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const dash = v => v == null ? "<span class=sub>-</span>" : esc(v);
 let runs = [], cur = null, timer = null;
+const TIPS = {
+  "sum|Keywords": "Keywords checked this run.",
+  "sum|Pack present": "Keywords where Google showed a map pack (DFS SERP).",
+  "sum|Us in pack": "Keywords where we appear in the map pack.",
+  "sum|Them in pack": "Keywords where the competitor appears in the map pack.",
+  "sum|Avg pack rank us": "Our average map-pack position, where we appear (1 = top).",
+  "sum|Avg pack rank them": "Competitor's average map-pack position, where they appear (1 = top).",
+  "sum|Wins / win set": "Keywords won out of keywords with a win condition.",
+  "res|Pack": "Map pack shown for this keyword.",
+  "res|Us pack": "Our map-pack position, with rating and review count.",
+  "res|Them pack": "Competitor's map-pack position, with rating and review count.",
+  "res|Us organic": "Our organic position (first matching result).",
+  "res|Them organic": "Competitor's organic position (first matching result).",
+  "res|Win": "If they're organic #1 we must be #1; if they're in the pack we must be too. n/a = neither applies.",
+  "hist|Run": "Map-pack run number. Click to view.",
+  "hist|Started": "When the run started.",
+  "hist|Status": "Run state: running, done or error.",
+  "hist|Spend": "DataForSEO cost of the run.",
+  "hist|Keywords": "Keywords checked this run.",
+  "hist|Pack": "Keywords where Google showed a map pack.",
+  "hist|Us in": "Keywords where we appear in the map pack.",
+  "hist|Them in": "Keywords where the competitor appears in the map pack.",
+  "hist|Avg rank us / them": "Average map-pack position, us / competitor (1 = top).",
+  "hist|Wins": "Keywords won out of keywords with a win condition."
+};
+const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 async function api(method, url) {
   const r = await fetch(url, {method});
   const d = await r.json().catch(() => ({}));
@@ -73,7 +99,7 @@ async function show(id) {
   cur = await api("GET", "api/mappack/runs/" + id);
   const s = cur.summary;
   document.getElementById("sum").innerHTML = `<div class="sub">Run #${cur.id} - ${esc(cur.started_at)} - ${esc(cur.status)} (${cur.done}/${cur.keywords}) - spend ${money(cur.cost)}${cur.error ? " - " + esc(cur.error) : ""}</div>
-    <table><tr><th>Keywords</th><th>Pack present</th><th>Us in pack</th><th>Them in pack</th><th>Avg pack rank us</th><th>Avg pack rank them</th><th>Wins / win set</th></tr>
+    <table><tr><th${tip("sum|Keywords")}>Keywords</th><th${tip("sum|Pack present")}>Pack present</th><th${tip("sum|Us in pack")}>Us in pack</th><th${tip("sum|Them in pack")}>Them in pack</th><th${tip("sum|Avg pack rank us")}>Avg pack rank us</th><th${tip("sum|Avg pack rank them")}>Avg pack rank them</th><th${tip("sum|Wins / win set")}>Wins / win set</th></tr>
     <tr><td>${s.keywords}</td><td>${s.pack_present}</td><td>${s.us_in_pack}</td><td>${s.them_in_pack}</td><td>${avg(s.us_avg_pack_rank)}</td><td>${avg(s.them_avg_pack_rank)}</td><td>${s.wins} / ${s.win_set}</td></tr></table>`;
   renderRes();
   clearTimeout(timer);
@@ -85,13 +111,13 @@ const rate = (r, n) => r == null ? "" : ` <span class=sub>${r}* (${n})</span>`;
 function renderRes() {
   const only = document.getElementById("only").checked;
   const rows = cur.results.filter(r => !only || r.pack_present);
-  document.getElementById("res").innerHTML = `<tr><th>Keyword</th><th>Pack</th><th>Us pack</th><th>Them pack</th><th>Us organic</th><th>Them organic</th><th>Win</th></tr>` +
+  document.getElementById("res").innerHTML = `<tr><th>Keyword</th><th${tip("res|Pack")}>Pack</th><th${tip("res|Us pack")}>Us pack</th><th${tip("res|Them pack")}>Them pack</th><th${tip("res|Us organic")}>Us organic</th><th${tip("res|Them organic")}>Them organic</th><th${tip("res|Win")}>Win</th></tr>` +
     rows.map(r => r.error ? `<tr><td>${esc(r.keyword)}</td><td colspan=6 class=sub>${esc(r.error)}</td></tr>` :
     `<tr><td>${esc(r.keyword)}</td><td>${r.pack_present ? "yes" : "no"}</td><td>${dash(r.us_pack_rank)}${rate(r.us_rating, r.us_reviews)}</td><td>${dash(r.them_pack_rank)}${rate(r.them_rating, r.them_reviews)}</td>
     <td>${link(r.us_org_url, r.us_org_pos)}</td><td>${link(r.them_org_url, r.them_org_pos)}</td><td>${r.win_set ? (r.won ? "win" : "<b>not yet</b>") : "<span class=sub>n/a</span>"}</td></tr>`).join("");
 }
 function renderHist() {
-  document.getElementById("hist").innerHTML = `<tr><th>Run</th><th>Started</th><th>Status</th><th>Keywords</th><th>Pack</th><th>Us in</th><th>Them in</th><th>Avg rank us / them</th><th>Wins</th><th>Spend</th></tr>` +
+  document.getElementById("hist").innerHTML = `<tr><th${tip("hist|Run")}>Run</th><th${tip("hist|Started")}>Started</th><th${tip("hist|Status")}>Status</th><th${tip("hist|Keywords")}>Keywords</th><th${tip("hist|Pack")}>Pack</th><th${tip("hist|Us in")}>Us in</th><th${tip("hist|Them in")}>Them in</th><th${tip("hist|Avg rank us / them")}>Avg rank us / them</th><th${tip("hist|Wins")}>Wins</th><th${tip("hist|Spend")}>Spend</th></tr>` +
     runs.map(r => { const s = r.summary; return `<tr><td><a href="#" data-id="${r.id}">#${r.id}</a></td><td>${esc(r.started_at)}</td><td>${esc(r.status)}</td><td>${r.keywords}</td><td>${s.pack_present}</td><td>${s.us_in_pack}</td><td>${s.them_in_pack}</td><td>${avg(s.us_avg_pack_rank)} / ${avg(s.them_avg_pack_rank)}</td><td>${s.wins}/${s.win_set}</td><td>${money(r.cost)}</td></tr>`; }).join("");
 }
 document.getElementById("hist").onclick = wrap(async e => { const id = e.target.dataset && e.target.dataset.id; if (id) { e.preventDefault(); await show(id); } });

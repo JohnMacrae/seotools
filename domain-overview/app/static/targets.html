@@ -50,6 +50,17 @@
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let rows = [], editing = null;
+const TIPS = {
+  "#": "Row key from docs/keyword-targets.md.",
+  "Target page": "Page meant to rank; \"(new)\" = not built yet.",
+  "Primary keyword": "Main keyword the page should rank for.",
+  "Supporting keywords": "Related keywords the same page should also cover.",
+  "Volume": "Monthly searches for the primary keyword (from the targets doc).",
+  "Win basis": "What counts as winning this keyword; \"(edited)\" = changed here.",
+  "Phase": "Rollout phase (1 = bridal now).",
+  "Line": "Product line: bridal, bridesmaids or MOB."
+};
+const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 
 async function api(method, url, body) {
   const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
@@ -62,7 +73,7 @@ const wrap = fn => async (...a) => { try { document.getElementById("err").innerH
 async function load() { rows = await api("GET", "/api/targets"); render(); }
 
 function render() {
-  const head = "<tr><th>#</th><th>Target page</th><th>Primary keyword</th><th>Supporting keywords</th><th>Volume</th><th>Win basis</th><th>Phase</th><th>Line</th><th></th></tr>";
+  const head = `<tr><th${tip("#")}>#</th><th${tip("Target page")}>Target page</th><th${tip("Primary keyword")}>Primary keyword</th><th${tip("Supporting keywords")}>Supporting keywords</th><th${tip("Volume")}>Volume</th><th${tip("Win basis")}>Win basis</th><th${tip("Phase")}>Phase</th><th${tip("Line")}>Line</th><th></th></tr>`;
   const body = rows.map(r => editing === r.id ? editRow(r) : `<tr>
     <td>${r.seed_key ?? ""}</td><td><code>${esc(r.path)}</code>${r.is_new ? ' <span class="sub">(new)</span>' : ""}</td>
     <td>${esc(r.primary_keyword)}</td><td>${esc(r.supporting.join("; "))}</td>
