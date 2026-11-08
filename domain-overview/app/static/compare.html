@@ -8,7 +8,11 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec;
     --accent: #2f6fde; --on: #2f6fde; --off: #e3742f; --good: #1f9d55; --bad: #d64545; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4; --accent-bg: #e8f0fd;
+    --warn-bg: #fdf0e6; --warn-ink: #b5561c; --chip-bg: #fafbfc; --you-bg: #fff7f0; --unk: #c5cad4;
+    color-scheme: light dark;
   }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45; --on: #6b9cf0; --off: #f0a060; --good: #4cc485; --warn-bg: #3a2a1c; --warn-ink: #f0a060; --chip-bg: #1f2530; --you-bg: #33261a; --unk: #7a8396; } }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
   header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
@@ -16,14 +20,14 @@
   .top h1 { font-size: 16px; margin: 0; }
   nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
   form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #fff; color: var(--ink); }
+  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--card); color: var(--ink); }
   input { width: 190px; } input#you { width: 210px; font-weight: 600; }
-  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
-  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); padding: 4px 10px; font-size: 12px; }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: var(--card); color: var(--ink); border-color: var(--line); padding: 4px 10px; font-size: 12px; }
   button:disabled { opacity: .6; cursor: wait; }
   .vs { color: var(--muted); font-size: 12px; }
   .chips { margin-top: 8px; font-size: 12px; color: var(--muted); }
-  .chip { display: inline-block; border: 1px solid var(--line); border-radius: 14px; padding: 2px 9px; margin: 2px 4px 2px 0; cursor: pointer; color: var(--ink); background: #fafbfc; }
+  .chip { display: inline-block; border: 1px solid var(--line); border-radius: 14px; padding: 2px 9px; margin: 2px 4px 2px 0; cursor: pointer; color: var(--ink); background: var(--chip-bg); }
   .chip:hover { border-color: var(--accent); }
   main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
   .grid { display: grid; gap: 16px; }
@@ -34,7 +38,7 @@
   .big { font-size: 26px; font-weight: 650; }
   .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .headline { font-size: 15px; line-height: 1.55; margin: 0 0 14px; }
-  .split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; font-size: 12px; color: #fff; font-weight: 600; }
+  .split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; font-size: 12px; color: var(--on-accent); font-weight: 600; }
   .split div { display: flex; align-items: center; padding: 0 10px; white-space: nowrap; }
   .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 6px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
@@ -45,21 +49,21 @@
   table.sortable th[data-dir="asc"]::after { content: " ▲"; }
   table.sortable th[data-dir="desc"]::after { content: " ▼"; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tr.you td { background: #fff7f0; font-weight: 600; }
+  tr.you td { background: var(--you-bg); font-weight: 600; }
   .scroll { max-height: 520px; overflow: auto; }
   .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
-  .pill.on-page { background: #e8f0fd; color: var(--on); }
-  .pill.off-page { background: #fdf0e6; color: #b5561c; }
-  .pill.unknown { background: #eef0f4; color: var(--muted); }
+  .pill.on-page { background: var(--accent-bg); color: var(--on); }
+  .pill.off-page { background: var(--warn-bg); color: var(--warn-ink); }
+  .pill.unknown { background: var(--subtle); color: var(--muted); }
   .reason { color: var(--muted); font-size: 12px; max-width: 420px; }
   .pos { font-variant-numeric: tabular-nums; }
   .better { color: var(--good); font-weight: 600; } .worse { color: var(--bad); }
   .issues { color: var(--bad); font-size: 12px; }
   a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
-  .err { background: #fdeaea; color: #8a1f1f; border: 1px solid #f3c2c2; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; background: #fff; color: var(--muted); padding: 3px 10px; font-size: 12px; }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button { border: 0; border-radius: 0; background: var(--card); color: var(--muted); padding: 3px 10px; font-size: 12px; }
+  .seg button.on { background: var(--accent); color: var(--on-accent); }
   .filter { padding: 4px 8px; font-size: 12px; width: 180px; }
   .wrap { word-break: break-word; }
   .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
@@ -134,7 +138,7 @@ function render() {
       ${v.losing_keywords ? `<div class="split">
         ${v.onpage_share ? `<div style="background:var(--on);width:${v.onpage_share}%">On-page ${v.onpage_share}%</div>` : ""}
         ${v.offpage_share ? `<div style="background:var(--off);width:${v.offpage_share}%">Off-page ${v.offpage_share}%</div>` : ""}
-        ${unk ? `<div style="background:#c5cad4;width:${unk}%">?</div>` : ""}</div>
+        ${unk ? `<div style="background:var(--unk);width:${unk}%">?</div>` : ""}</div>
         <div class="legend"><span><i class="dot" style="background:var(--on)"></i>On-page: you have equal or more authority but rank lower</span>
           <span><i class="dot" style="background:var(--off)"></i>Off-page: their page or domain has clearly more links</span></div>` : ""}
     </div>
