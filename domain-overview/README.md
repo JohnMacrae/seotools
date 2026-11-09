@@ -93,7 +93,7 @@ On the `/targets` Link map tab, "Run supporting-page review" asks the model, for
 targets per designer page), which indexable pages a reader would naturally go on to the target page from, then finds the
 sentence and anchor (a target keyword or close variant) on each, or drafts one sentence. Proposals are stored in
 `supporting_pages`; Approve / Reject them on the card. Re-runs only add or refresh `proposed` rows and never resurrect
-decided ones. Pages that already link the target anywhere (pills, related-reading blocks, breadcrumbs) are skipped by the review and by the planner; links on more than half the site (the menu) don't count (`linkgraph.linked_pairs`). The link plan proposes approved supporting links first. `POST /api/crawl/ID/supporting` (409 if running),
+decided ones. Pages that already link the target anywhere (pills, related-reading blocks, breadcrumbs) are skipped by the review and by the planner (every suggestion kind: supporting, boost, route, wrong page); links on more than half the site (the menu) don't count (`linkgraph.linked_pairs`). The link plan proposes approved supporting links first. `POST /api/crawl/ID/supporting` (409 if running),
 `GET /api/supporting/run/ID` (status), `GET /api/supporting?crawl=ID&status=` (all rows), and
 `POST /api/supporting/ROW_ID` with `{"status": "approved"|"rejected"|"proposed"}` and/or edited `anchor`, `sentence`, `in_text`.
 

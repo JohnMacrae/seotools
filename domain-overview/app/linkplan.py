@@ -262,6 +262,8 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
     def add(src, dst, kind, score, reason):
         if src == dst or dst in out_ctx[src] or not ok_src(src) or not S.get(dst, {}).get("indexable"):
             return
+        if (src, dst) in (all_linked or ()):  # already linked anywhere on the page (nav strip, pills); not the site-wide menu
+            return
         cands.append({"src": src, "dst": dst, "kind": kind, "score": score, "reason": reason})
 
     # 1. Boost the pages with the most to gain.
@@ -320,7 +322,7 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
     # 1b. Approved supporting pages link to their target page first, with the approved anchor and sentence.
     for r in supporting or []:
         src, dst = norm(r["supporting_page"]), norm(r["target_page"])
-        if dst not in S or (src, dst) in (all_linked or ()):  # already linked anywhere on the page (template pills etc.)
+        if dst not in S:
             continue
         before = len(cands)
         add(src, dst, "supporting", (tl.get(dst) or S[dst]).get("opportunity", 0) + 1,

@@ -271,6 +271,17 @@ def test_planner_skips_approved_row_with_template_link():
     assert both(all_linked={(U("/blog/a5"), TARGET)}) == {U("/blog/a4")}
 
 
+
+def test_planner_skips_any_kind_already_linked():
+    # boost/route as well as supporting: a nav strip or pill link on the source page counts as linked (plan 7, #17)
+    S, P, topics, row = _plan_world()
+    appr = {"target_page": TARGET, "supporting_page": U("/blog/a4"), "anchor": "short wedding dresses",
+            "in_text": False, "sentence": "Our short wedding dresses go home on the day.", "reason": "r"}
+    args = (S, P, defaultdict(set), topics, [], set(), set(), [row], [appr])
+    pairs = {(c["src"], c["dst"]) for c in lp.candidates(*args)}
+    assert {c["kind"] for c in lp.candidates(*args)} - {"supporting"}, "world should yield non-supporting candidates"
+    assert lp.candidates(*args, all_linked=pairs) == []
+
 def test_sitewide_menu_link_does_not_block(monkeypatch):
     # a menu link to the target on every page is boilerplate: FAQ stays a candidate
     calls = []
