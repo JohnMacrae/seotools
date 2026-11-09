@@ -48,6 +48,7 @@
   .badge.on { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); }
   .badge.off { background: var(--subtle); color: var(--muted); border: 1px solid var(--line); }
   td.n, th.n { text-align: right; } .neg { color: var(--bad); } h2 { font-size: 15px; margin: 0 0 6px; } h3 { font-size: 14px; margin: 14px 0 4px; }
+  details { border-top: 1px solid var(--line, #e5e5e5); padding: 6px 0; } summary { cursor: pointer; } details table { margin: 6px 0 10px; }
 </style>
 </head>
 <body>
@@ -76,10 +77,10 @@ function cmp(c) {
 function render(d) {
   const dd = d.data_dates, t = d.thresholds;
   $("hdr").innerHTML = `Page-2 window ${rng(dd.page2)} · Decay: current ${rng(dd.decay.current)}, previous ${rng(dd.decay.previous)}, year ago ${rng(dd.decay.year_ago)} · fetched ${esc(d.fetched_at)}`;
-  $("p2intro").textContent = `Queries at average position ${t.pos_min} to ${t.pos_max} with at least ${t.min_impressions} impressions, over ${t.window_days} days.`;
-  $("p2").innerHTML = d.page2.length ? d.page2.map(g => `<h3>${esc(path(g.page))} <span class="sub">${num(g.impressions)} impressions</span></h3>
+  $("p2intro").textContent = `Queries just off page 1: average position ${t.pos_min} to ${t.pos_max} with at least ${t.min_impressions} impressions, over ${t.window_days} days. Click a page to expand.`;
+  $("p2").innerHTML = d.page2.length ? d.page2.map(g => `<details><summary><b>${esc(path(g.page))}</b> <span class="sub">${num(g.impressions)} impressions · ${g.queries.length} queries · ${g.queries.filter(q => q.tag === "on-target").length} on-target</span></summary>
     <table><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">Position</th><th>Tag</th></tr>${g.queries.map(q =>
-    `<tr><td>${esc(q.query)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${q.position.toFixed(1)}</td><td><span class="badge ${q.tag === "on-target" ? "on" : "off"}">${esc(q.tag)}</span></td></tr>`).join("")}</table>`).join("")
+    `<tr><td>${esc(q.query)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${q.position.toFixed(1)}</td><td><span class="badge ${q.tag === "on-target" ? "on" : "off"}">${esc(q.tag)}</span></td></tr>`).join("")}</table></details>`).join("")
     : '<div class="sub">No page-2 queries meet the thresholds.</div>';
   const thr = `a drop of at least ${t.decay_pct * 100}% and ${t.decay_min_clicks} clicks versus the previous period or the same period last year`;
   $("dcintro").textContent = `Flagged: ${thr}.`;
