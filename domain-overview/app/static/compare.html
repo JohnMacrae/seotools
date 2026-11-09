@@ -8,7 +8,11 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec;
     --accent: #2f6fde; --on: #2f6fde; --off: #e3742f; --good: #1f9d55; --bad: #d64545; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4; --accent-bg: #e8f0fd;
+    --warn-bg: #fdf0e6; --warn-ink: #b5561c; --chip-bg: #fafbfc; --you-bg: #fff7f0; --unk: #c5cad4;
+    color-scheme: light dark;
   }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45; --on: #6b9cf0; --off: #f0a060; --good: #4cc485; --warn-bg: #3a2a1c; --warn-ink: #f0a060; --chip-bg: #1f2530; --you-bg: #33261a; --unk: #7a8396; } }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
   header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
@@ -16,14 +20,14 @@
   .top h1 { font-size: 16px; margin: 0; }
   nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
   form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #fff; color: var(--ink); }
+  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--card); color: var(--ink); }
   input { width: 190px; } input#you { width: 210px; font-weight: 600; }
-  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
-  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); padding: 4px 10px; font-size: 12px; }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: var(--card); color: var(--ink); border-color: var(--line); padding: 4px 10px; font-size: 12px; }
   button:disabled { opacity: .6; cursor: wait; }
   .vs { color: var(--muted); font-size: 12px; }
   .chips { margin-top: 8px; font-size: 12px; color: var(--muted); }
-  .chip { display: inline-block; border: 1px solid var(--line); border-radius: 14px; padding: 2px 9px; margin: 2px 4px 2px 0; cursor: pointer; color: var(--ink); background: #fafbfc; }
+  .chip { display: inline-block; border: 1px solid var(--line); border-radius: 14px; padding: 2px 9px; margin: 2px 4px 2px 0; cursor: pointer; color: var(--ink); background: var(--chip-bg); }
   .chip:hover { border-color: var(--accent); }
   main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
   .grid { display: grid; gap: 16px; }
@@ -34,7 +38,7 @@
   .big { font-size: 26px; font-weight: 650; }
   .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .headline { font-size: 15px; line-height: 1.55; margin: 0 0 14px; }
-  .split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; font-size: 12px; color: #fff; font-weight: 600; }
+  .split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; font-size: 12px; color: var(--on-accent); font-weight: 600; }
   .split div { display: flex; align-items: center; padding: 0 10px; white-space: nowrap; }
   .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 6px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
@@ -45,21 +49,21 @@
   table.sortable th[data-dir="asc"]::after { content: " ▲"; }
   table.sortable th[data-dir="desc"]::after { content: " ▼"; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tr.you td { background: #fff7f0; font-weight: 600; }
+  tr.you td { background: var(--you-bg); font-weight: 600; }
   .scroll { max-height: 520px; overflow: auto; }
   .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
-  .pill.on-page { background: #e8f0fd; color: var(--on); }
-  .pill.off-page { background: #fdf0e6; color: #b5561c; }
-  .pill.unknown { background: #eef0f4; color: var(--muted); }
+  .pill.on-page { background: var(--accent-bg); color: var(--on); }
+  .pill.off-page { background: var(--warn-bg); color: var(--warn-ink); }
+  .pill.unknown { background: var(--subtle); color: var(--muted); }
   .reason { color: var(--muted); font-size: 12px; max-width: 420px; }
   .pos { font-variant-numeric: tabular-nums; }
   .better { color: var(--good); font-weight: 600; } .worse { color: var(--bad); }
   .issues { color: var(--bad); font-size: 12px; }
   a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
-  .err { background: #fdeaea; color: #8a1f1f; border: 1px solid #f3c2c2; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; background: #fff; color: var(--muted); padding: 3px 10px; font-size: 12px; }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button { border: 0; border-radius: 0; background: var(--card); color: var(--muted); padding: 3px 10px; font-size: 12px; }
+  .seg button.on { background: var(--accent); color: var(--on-accent); }
   .filter { padding: 4px 8px; font-size: 12px; width: 180px; }
   .wrap { word-break: break-word; }
   .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
@@ -67,7 +71,7 @@
 </head>
 <body>
 <header>
-  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare" class="on">Competitor gap</a></nav></div>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare" class="on">Competitor gap</a><a href="linking">Internal linking</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a></nav></div>
   <form id="f">
     <input id="you" name="you" placeholder="Your domain" required>
     <span class="vs">vs</span>
@@ -78,22 +82,51 @@
       <option value="2826">UK</option><option value="2840">US</option><option value="2372">Ireland</option>
       <option value="2036">Australia</option><option value="2124">Canada</option>
     </select>
-    <button id="go">Compare</button>
+    <button id="go">Compare</button> <span class="spend-light" data-feature="compare"></span>
   </form>
   <div class="chips" id="chips"></div>
 </header>
 <main id="app"></main>
 
+<script src="spendlight.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const path = u => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u || ""; } };
 let S = null;
+const TIPS = {
+  "Your domain": "The domain compared.",
+  "Competitors": "Domains it was compared against.",
+  "When": "When the comparison ran.",
+  "Cost": "DataForSEO spend for that run.",
+  "Domain rank": "DFS backlink authority score 0–1000 for the whole site.",
+  "Referring domains": "Distinct sites linking to this site (DFS backlinks).",
+  "of which nofollow": "Referring domains whose links are all nofollow.",
+  "Backlinks": "Total links pointing at the site (DFS backlinks).",
+  "Link spam score": "DFS estimate of how spammy the backlink profile is (0–100%).",
+  "audit": "DFS on-page crawl of that site's homepage.",
+  "You": "Your position: Search Console average (GSC), else live map-pack check, else Labs estimate — see the tag",
+  "competitor": "Their Google position and ranking page (DFS).",
+  "Cause": "off-page = they have ≥1.25× your domain rank or ≥2× the page's referring domains; else on-page (content/relevance).",
+  "Why": "The numbers behind Cause.",
+  "Volume": "Average monthly Google searches (DataForSEO Labs estimate).",
+  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DataForSEO Labs estimate).",
+  "Their best page": "Competitor's highest-ranking page for the keyword.",
+  "Referring site": "Site linking to competitors but not to you (DFS).",
+  "Links to": "Which competitors it links to.",
+  "Linking page": "The page holding the link, its target and anchor.",
+  "Site rank": "The referring site's DFS domain rank 0–1000.",
+  "Spam score": "Referring site's DFS spam score; ≥50% hidden."
+};
+const GA_TIP = "Google Ads UK monthly, from keyword targets doc";
+const volTip = rows => rows.some(r => r.volume_source === "targets") ? " title=\"Average monthly searches: Google Ads UK (GA, keyword targets doc) for keyword targets, otherwise DataForSEO Labs estimate (est.)\"" : tip("Volume");
+const volCell = r => fmt(r.volume) + (r.volume_source === "targets" ? ` <span class="sub" title="${GA_TIP}">GA</span>` : r.volume != null ? ` <span class="sub" title="DataForSEO Labs estimate">est.</span>` : "");
+const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 
 async function home() {
   const rows = await fetch("api/comparisons").then(r => r.json());
-  $("#app").innerHTML = `<div class="card"><h2>Past comparisons</h2>${rows.length ? `<table><tr><th>Your domain</th><th>Competitors</th><th>When</th><th class="num">Cost</th></tr>
+  $("#app").innerHTML = `<div class="card"><h2>Past comparisons</h2>${rows.length ? `<table><tr><th${tip("Your domain")}>Your domain</th><th${tip("Competitors")}>Competitors</th><th${tip("When")}>When</th><th class="num"${tip("Cost")}>Cost</th></tr>
     ${rows.map(r => `<tr><td><a href="?id=${r.id}&d=${encodeURIComponent(r.domain)}&c=${encodeURIComponent(r.competitors)}&l=${r.location_code}">${esc(r.domain)}</a></td>
       <td>${esc(r.competitors.split(",").join(", "))}</td><td>${r.fetched_at.replace("T", " ")}</td><td class="num">$${(r.cost || 0).toFixed(3)}</td></tr>`).join("")}</table>`
     : `<div class="sub">None yet. Enter your domain and up to 3 competitors above. Tip: run a Domain overview of your site first and its competitors appear here as suggestions.</div>`}</div>`;
@@ -117,6 +150,7 @@ async function run(q) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || res.statusText);
     S = data; render();
+    if (window.spendLights) window.spendLights.refresh();
   } catch (e) { $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   finally { btn.disabled = false; btn.textContent = "Compare"; }
 }
@@ -129,12 +163,13 @@ function render() {
     ${S.errors?.length ? `<div class="err">Some data failed: ${esc(S.errors.join("; "))}</div>` : ""}
     <div class="card">
       <h2>Verdict <small>${S.cached ? "from cache" : "fresh"} · ${S.fetched_at.replace("T", " ")} · cost $${(S.cost || 0).toFixed(3)}
-        <button class="ghost" id="refresh">Refresh (paid)</button></small></h2>
+        <button class="ghost" id="refresh">Refresh (paid)</button>
+        <span class="spend-light" data-feature="compare" data-ts="${esc(S.fetched_at || "")}" data-cost="${S.cost || 0}"></span></small></h2>
       <p class="headline">${esc(v.headline || "Not enough shared data to judge.")}</p>
       ${v.losing_keywords ? `<div class="split">
         ${v.onpage_share ? `<div style="background:var(--on);width:${v.onpage_share}%">On-page ${v.onpage_share}%</div>` : ""}
         ${v.offpage_share ? `<div style="background:var(--off);width:${v.offpage_share}%">Off-page ${v.offpage_share}%</div>` : ""}
-        ${unk ? `<div style="background:#c5cad4;width:${unk}%">?</div>` : ""}</div>
+        ${unk ? `<div style="background:var(--unk);width:${unk}%">?</div>` : ""}</div>
         <div class="legend"><span><i class="dot" style="background:var(--on)"></i>On-page: you have equal or more authority but rank lower</span>
           <span><i class="dot" style="background:var(--off)"></i>Off-page: their page or domain has clearly more links</span></div>` : ""}
     </div>
@@ -147,7 +182,7 @@ function render() {
     </div>
 
     <div class="card"><h2>Authority (off-page)</h2>
-      <table class="sortable"><tr><th>Domain</th><th class="num">Domain rank</th><th class="num">Referring domains</th><th class="num">of which nofollow</th><th class="num">Backlinks</th><th class="num">Link spam score</th></tr>
+      <table class="sortable"><tr><th>Domain</th><th class="num"${tip("Domain rank")}>Domain rank</th><th class="num"${tip("Referring domains")}>Referring domains</th><th class="num"${tip("of which nofollow")}>of which nofollow</th><th class="num"${tip("Backlinks")}>Backlinks</th><th class="num"${tip("Link spam score")}>Link spam score</th></tr>
       ${S.sites.map(s => `<tr class="${s.is_you ? "you" : ""}"><td>${esc(s.domain)}${s.is_you ? " (you)" : ""}</td>
         <td class="num">${fmt(s.rank)}</td><td class="num">${fmt(s.referring_domains)}</td><td class="num">${fmt(s.referring_domains_nofollow)}</td>
         <td class="num">${fmt(s.backlinks)}</td><td class="num">${s.spam_score == null ? "—" : s.spam_score + "%"}</td></tr>`).join("")}</table>
@@ -159,6 +194,7 @@ function render() {
     <div class="card"><h2>Keywords where they beat you (${fmt(v.losing_keywords)})
       <span><span class="seg" id="cf"><button class="on" data-c="">All</button><button data-c="on-page">On-page</button><button data-c="off-page">Off-page</button><button data-c="winning">Winning</button></span>
       <input class="filter" id="kf" placeholder="Filter…"></span></h2>
+      <div class="sub" style="margin-bottom:8px">${posLine(S)}</div>
       <div class="scroll" id="shared"></div></div>
 
     <div class="card"><h2>Content gap — they rank, you don't (${fmt(v.missing_keywords)}) <input class="filter" id="mf" placeholder="Filter…"></h2>
@@ -199,10 +235,24 @@ function onpageTable() {
     ["Load time (ms)", s => fmt(s?.load_ms)],
     ["Issues", s => s?.issues?.length ? `<span class="issues">${s.issues.map(esc).join("<br>")}</span>` : (s ? "None found" : "—")],
   ];
-  return `<table><tr><th></th>${sites.map(s => `<th>${esc(s.domain)}${s.is_you ? " (you)" : ""}</th>`).join("")}</tr>
+  return `<table><tr><th></th>${sites.map(s => `<th${tip("audit")}>${esc(s.domain)}${s.is_you ? " (you)" : ""}</th>`).join("")}</tr>
     ${rows.map(([label, f]) => `<tr><td><strong>${label}</strong></td>${sites.map(s => `<td class="wrap">${s.onpage ? f(s.onpage) : (label === "Title" ? "Could not fetch" : "")}</td>`).join("")}</tr>`).join("")}</table>`;
 }
 
+function posLine(S) {
+  const g = S.gsc_positions, l = S.live_positions, bits = [];
+  if (g) bits.push(`Your positions: Search Console average, ${esc(g.start)}–${esc(g.end)} (${fmt(g.keywords)} keywords)`);
+  if (l) bits.push(g ? `theweddingshop.uk: ${fmt(l.keywords)} live from map-pack run ${esc((l.as_of || "").slice(0, 10))} (single check)`
+                     : `${fmt(l.keywords)} live from map-pack run ${esc((l.as_of || "").slice(0, 10))} (single check)`);
+  bits.push(bits.length ? "Other positions: Labs estimates" : "Positions: all are Labs estimates");
+  return bits.join(". ") + ".";
+}
+function srcTag(e) {
+  if (!e || !e.source) return "";
+  if (e.source === "gsc") { const g = S?.gsc_positions || {}; return ` <span class="sub" title="Search Console average position over ${esc(g.start || "")}–${esc(g.end || "")} (${fmt(e.gsc_impressions || 0)} impressions)">GSC</span>`; }
+  const live = e.source === "live";
+  return ` <span class="sub" title="${live ? "Live Google SERP, Colchester, " + esc(e.device || "desktop") + ", " + esc((e.live_as_of || "").slice(0, 10)) + (e.desktop_position !== undefined ? ", desktop: " + (e.desktop_position ?? "not in top 20") : "") : "DataForSEO Labs estimate, may be weeks old"}">${live ? "live" : "est."}</span>`;
+}
 function posCell(p, you) {
   if (p == null) return "—";
   const cls = you == null ? "" : p < you ? "worse" : p > you ? "better" : "";
@@ -211,21 +261,21 @@ function posCell(p, you) {
 function sharedTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table class="sortable"><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th><th class="num">You</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Cause</th><th>Why</th></tr>
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${volTip(rows)}>Volume</th><th class="num"${tip("KD")}>KD</th><th class="num"${tip("You")}>You</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Cause")}>Cause</th><th${tip("Why")}>Why</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.keyword)}<div class="sub">${r.you.url ? `you: <a href="${esc(r.you.url)}" target="_blank" rel="noopener">${esc(path(r.you.url))}</a>` : ""}</div></td>
-      <td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
-      <td class="num"><strong>${r.you.position ?? "—"}</strong></td>
-      ${comps.map(c => { const e = r.competitors[c]; return `<td class="num">${e ? `${posCell(e.position, r.you.position)}${e.url ? `<div class="sub"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(path(e.url))}</a></div>` : ""}` : "—"}</td>`; }).join("")}
-      <td>${r.status === "losing" ? `<span class="pill ${r.cause}">${r.cause}</span>` : `<span class="better">winning</span>`}</td>
+      <td class="num">${volCell(r)}</td><td class="num">${fmt(r.kd)}</td>
+      <td class="num"><strong>${r.you.position ?? "—"}</strong>${srcTag(r.you)}</td>
+      ${comps.map(c => { const e = r.competitors[c]; return `<td class="num">${e ? `${posCell(e.position, r.you.position)}${srcTag(e)}${e.url ? `<div class="sub"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(path(e.url))}</a></div>` : ""}` : "—"}</td>`; }).join("")}
+      <td>${r.status === "losing" ? `<span class="pill ${r.cause}">${r.cause}</span>` : (r.status === "unranked" ? `<span class="sub">neither ranks</span>` : `<span class="better">winning</span>`)}</td>
       <td class="reason">${esc(r.reason)}</td></tr>`).join("")}</table>`;
 }
 function missingTable(rows) {
   const comps = S.competitors;
   if (!rows.length) return `<div class="sub">No keywords.</div>`;
-  return `<table class="sortable"><tr><th>Keyword</th><th class="num">Volume</th><th class="num">KD</th>${comps.map(c => `<th class="num">${esc(c)}</th>`).join("")}<th>Their best page</th></tr>
-    ${rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="num">${fmt(r.volume)}</td><td class="num">${fmt(r.kd)}</td>
-      ${comps.map(c => `<td class="num">${r.competitors[c]?.position ?? "—"}</td>`).join("")}
-      <td class="wrap">${r.best_url ? `<a href="${esc(r.best_url)}" target="_blank" rel="noopener">${esc(r.best_url.replace(/^https?:\/\//, ""))}</a>` : ""}</td></tr>`).join("")}</table>`;
+  return `<table class="sortable"><tr><th>Keyword</th><th class="num"${volTip(rows)}>Volume</th><th class="num"${tip("KD")}>KD</th>${comps.map(c => `<th class="num"${tip("competitor")}>${esc(c)}</th>`).join("")}<th${tip("Their best page")}>Their best page</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.keyword)}</td><td class="num">${volCell(r)}</td><td class="num">${fmt(r.kd)}</td>
+      ${comps.map(c => `<td class="num">${r.competitors[c] ? (r.competitors[c].position ?? "—") + srcTag(r.competitors[c]) : "—"}</td>`).join("")}
+      <td class="wrap">${r.best_url ? `<a href="${esc(r.best_url)}" target="_blank" rel="noopener">${esc(r.best_url.replace(/^https?:\/\//, ""))}</a>` : ""}</td></tr>`).join("")}</table><div class="sub">Source: competitor positions are DataForSEO Labs estimates, as of ${esc((S.fetched_at || "").slice(0, 10))}; volume and KD are Labs estimates except keyword targets (GA).</div>`;
 }
 function linkgapTable() {
   if (!S.linkgap.length) return `<div class="sub">No link-gap domains found.</div>`;
@@ -236,7 +286,7 @@ function linkgapTable() {
     return `<div><a href="${esc(p.url_from)}" target="_blank" rel="noopener">${short(p.url_from)}</a>
       <span class="sub">→ ${short(p.url_to)}${p.anchor ? ` · “${esc(p.anchor)}”` : ""}${p.dofollow === false ? " · nofollow" : ""}</span></div>`;
   }).join("");
-  return `<table class="sortable"><tr><th>Referring site</th><th>Links to</th><th>Linking page</th><th class="num">Site rank</th><th class="num">Spam score</th></tr>
+  return `<table class="sortable"><tr><th${tip("Referring site")}>Referring site</th><th${tip("Links to")}>Links to</th><th${tip("Linking page")}>Linking page</th><th class="num"${tip("Site rank")}>Site rank</th><th class="num"${tip("Spam score")}>Spam score</th></tr>
     ${S.linkgap.map(r => `<tr><td><a href="https://${esc(r.domain)}" target="_blank" rel="noopener">${esc(r.domain)}</a></td>
       <td>${r.links_to.map(esc).join(", ")}</td><td class="wrap">${pageCell(r)}</td><td class="num">${fmt(r.rank)}</td><td class="num">${r.spam_score}%</td></tr>`).join("")}</table>`;
 }

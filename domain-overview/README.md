@@ -6,6 +6,8 @@ Panels: organic keywords (with new/up/down/lost movement), estimated traffic and
 a 12-month trend, ranking-position distribution, top organic keywords, top pages, main organic
 competitors and a competitive positioning map.
 
+All pages follow the OS light/dark setting (`prefers-color-scheme`); there is no manual toggle.
+
 Every lookup is saved as a dated snapshot in SQLite (`./data/overview.db`). A repeat lookup
 within `CACHE_DAYS` is served from the cache for free; "Refresh (paid)" forces a new fetch.
 Past snapshots can be picked from the dropdown.
@@ -29,6 +31,25 @@ Compare your domain with up to 3 competitors and see whether the gap is **on-pag
 Competitor suggestions come from your latest Domain overview of the same domain. Results are cached for `CACHE_DAYS`.
 A fresh comparison of 3 competitors makes about 15 DataForSEO calls; the cost is shown on the page.
 
+## Internal linking (`/linking`)
+
+A free, self-hosted crawler for your own site. "Crawl now" fetches the homepage and every sitemap URL (via `robots.txt`
+`Sitemap:` lines, falling back to `/sitemap.xml`), follows internal links breadth-first (4 at a time, 0.25s polite delay,
+respects `robots.txt`), and stores every page plus every internal link with its placement (nav, header, footer, aside, main
+or body). Redirects are recorded, not followed silently. Crawls are capped by `CRAWL_MAX_PAGES` (default 2000) and cost nothing.
+
+The **Health** tab shows orphans, contextual orphans (linked only from nav/footer), broken and redirected internal links,
+dead ends, non-indexable pages, title/H1/description problems, click depth and pages by section. Results are linkable with `?crawl=ID`.
+Other tabs (strength, topic map, template rules, to-dos) are placeholders for later work.
+
+Tests (no host Python needed; installs `requirements-dev.txt` in a throwaway python:3.12 container and runs all of `tests/`):
+
+```
+cd domain-overview && docker compose run --rm tests
+```
+
+Once per clone, enable the pre-commit hook that runs these tests: `git config core.hooksPath .githooks`
+
 ## Deploy on dnas
 
 ```bash
@@ -39,6 +60,9 @@ docker compose up -d --build
 ```
 
 Open http://dnas:8095 (or over Tailscale at http://100.98.167.107:8095).
+Pages: `/` overview, `/compare`, `/linking`, `/targets`, `/mappack`, `/digest` (weekly review: page-2 queries, low-CTR page-1 queries and decaying pages from Search Console; page groups collapse, columns sort on header click; By page / Top opportunities view (all queries by clicks lost); All / Booking / Sales intent filter; Fetch volumes (paid, DataForSEO search volume, cached 30 days, only new or stale queries requested); Refresh re-fetches) (source in `app/static/*.html`). `/targets` → **Link map** tab shows each keyword target's contextual, planned and template links with flags (`GET /api/linkmap[?crawl=ID]`). Each card also has an **On-page** line: the primary keyword (close variant, up to 2 extra words between its words) in the title, URL path (wedding/dress/bridal count as covered; home page not checked), H1 and first sentence of the body copy; misses add a `keyword missing: …` flag. Line hubs (`/collections/<line>`) never get `not in plan`. After `up -d --build`, wait for the container to answer before checking pages.
+
+Spend lights: every paid control (overview Analyse/Refresh, competitor gap Compare/Refresh, Find page gaps, Build link plan, supporting-page review, map pack Run check now, digest Fetch volumes) shows a dot and its last refresh date: green when the data is 30 days old or less, red when older, grey when never run (`STALE_DAYS` in `app/spend.py`).
 To put it behind the Pi's Caddy, add a site block that reverse-proxies to `100.98.167.107:8095`.
 
 Try it without credits first: set `DFS_MOCK=1` in `.env` and restart.
@@ -54,6 +78,10 @@ next to the snapshot and the running total is on the home page.
 - `GET /api/overview?domain=example.com&location=2826&language=en[&refresh=1][&snapshot=ID]`
 - `GET /api/history?domain=example.com&location=2826`
 - `GET /api/recent`
+- `POST /api/crawl?domain=example.com` (409 if one is running), `GET /api/crawl/ID`, `GET /api/crawls?domain=`, `GET /api/crawl/ID/health`
+- `GET /api/digest[?refresh=1]` (JSON backing the `/digest` page)
+- `POST /api/digest/volumes` (paid: fetch search volume for digest queries not cached in the last 30 days)
+- `GET /api/spend-status` (last refresh date, last cost, total cost and green/red/never status per paid feature)
 - `GET /healthz`
 
 Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.
@@ -63,3 +91,27 @@ Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.
 - The protocol and `www.` are removed from input, so a pasted URL works.
 - Ranking-change arrows compare against DataForSEO's previous absolute rank, so treat them as indicative.
 - The competitor list excludes giant sites (Amazon, Wikipedia and similar) via `exclude_top_domains`.
+
+## Supporting-page review
+
+On the `/targets` Link map tab, "Run supporting-page review" asks the model, for each phase-1 bridal keyword target (template
+targets per designer page), which indexable pages a reader would naturally go on to the target page from, then finds the
+sentence and anchor (a target keyword or close variant) on each, or drafts one sentence. Proposals are stored in
+`supporting_pages`; Approve / Reject them on the card. Re-runs only add or refresh `proposed` rows and never resurrect
+decided ones. Pages that already link the target anywhere (pills, related-reading blocks, breadcrumbs) are skipped by the review and by the planner (every suggestion kind: supporting, boost, route, wrong page); links on more than half the site (the menu) don't count (`linkgraph.linked_pairs`). The link plan proposes approved supporting links first. `POST /api/crawl/ID/supporting` (409 if running),
+`GET /api/supporting/run/ID` (status), `GET /api/supporting?crawl=ID&status=` (all rows), and
+`POST /api/supporting/ROW_ID` with `{"status": "approved"|"rejected"|"proposed"}` and/or edited `anchor`, `sentence`, `in_text`.
+
+## Monthly map pack check
+
+`/mappack` checks Google (Colchester) for every stored keyword target (primary + supporting) and records our and the
+competitor's map pack rank, rating and organic position/URL per keyword, with run history and DataForSEO spend per run.
+`POST /api/mappack/run` starts a run (`?limit=N` checks only the first N keywords); `GET /api/mappack/runs` and
+`GET /api/mappack/runs/ID` read them. Organic URLs come from `website_name`/`breadcrumb` because DataForSEO returns a
+Google redirect; a URL rebuilt from a truncated breadcrumb is approximate (the domain is always right).
+
+Monthly schedule (host crontab, 06:00 on the 1st; not installed by default):
+
+```
+0 6 1 * * curl -fsS -X POST http://localhost:8095/api/mappack/run >/dev/null
+```

@@ -10,16 +10,22 @@
     --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec;
     --accent: #2f6fde; --accent2: #e3742f; --good: #1f9d55; --bad: #d64545;
     --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4; --accent-bg: #e8f0fd;
+    --accent-fill: rgba(47,111,222,.12); --accent-soft: rgba(47,111,222,.35); --accent2-fill: rgba(227,116,47,.85);
+    --seq1: #1f4fa8; --seq2: #2f6fde; --seq3: #5b8ee8; --seq4: #8fb2f0; --seq5: #bcd0f6; --seq6: #dfe8fa;
+    color-scheme: light dark;
   }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45; --accent2: #f0a060; --good: #4cc485; --accent-fill: rgba(107,156,240,.18); --accent-soft: rgba(107,156,240,.4); --accent2-fill: rgba(240,160,96,.8); --seq1: #a9c4f5; --seq2: #6b9cf0; --seq3: #4f81d6; --seq4: #3a67b4; --seq5: #2c4f8a; --seq6: #1f3a66; } }
+
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
   header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
   header h1 { font-size: 16px; margin: 0 12px 0 0; letter-spacing: .2px; }
   form { display: flex; gap: 8px; flex: 1; min-width: 320px; }
-  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #fff; color: var(--ink); }
+  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--card); color: var(--ink); }
   input[name=domain] { flex: 1; }
-  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
-  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: var(--card); color: var(--ink); border-color: var(--line); }
   button:disabled { opacity: .6; cursor: wait; }
   main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
   .meta { color: var(--muted); font-size: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -37,8 +43,8 @@
   .up { color: var(--good); } .down { color: var(--bad); }
   .chart { position: relative; height: 260px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; background: #fff; color: var(--muted); padding: 3px 10px; font-size: 12px; text-transform: none; letter-spacing: 0; }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button { border: 0; border-radius: 0; background: var(--card); color: var(--muted); padding: 3px 10px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  .seg button.on { background: var(--accent); color: var(--on-accent); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th { color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--card); }
@@ -46,8 +52,8 @@
   td.wrap { white-space: normal; word-break: break-all; }
   .scroll { max-height: 440px; overflow: auto; }
   a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
-  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #e8f0fd; color: var(--accent); margin-left: 4px; }
-  .err { background: #fdeaea; color: #8a1f1f; border: 1px solid #f3c2c2; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--accent-bg); color: var(--accent); margin-left: 4px; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; }
   .recent a { display: inline-block; margin: 4px 10px 4px 0; }
   .filter { padding: 4px 8px; font-size: 12px; width: 180px; text-transform: none; letter-spacing: 0; font-weight: 400; }
@@ -56,7 +62,7 @@
 <body>
 <header>
   <h1>SEO tools</h1>
-  <nav style="font-size:14px"><a href="./" style="color:var(--ink);font-weight:600;margin-right:14px;text-decoration:none">Domain overview</a><a href="compare" style="color:var(--muted);text-decoration:none;margin-right:14px">Competitor gap</a></nav>
+  <nav style="font-size:14px"><a href="./" style="color:var(--ink);font-weight:600;margin-right:14px;text-decoration:none">Domain overview</a><a href="compare" style="color:var(--muted);text-decoration:none;margin-right:14px">Competitor gap</a><a href="linking" style="color:var(--muted);text-decoration:none;margin-right:14px">Internal linking</a><a href="targets" style="color:var(--muted);text-decoration:none;margin-right:14px">Keyword targets</a><a href="mappack" style="color:var(--muted);text-decoration:none;margin-right:14px">Map pack</a><a href="digest" style="color:var(--muted);text-decoration:none;margin-right:14px">Digest</a></nav>
   <form id="f">
     <input name="domain" placeholder="Enter a domain, e.g. serenitybrides.com" autocomplete="off" required>
     <select name="location" title="Database">
@@ -66,7 +72,7 @@
       <option value="2036">Australia</option>
       <option value="2124">Canada</option>
     </select>
-    <button id="go">Analyse</button>
+    <button id="go">Analyse</button> <span class="spend-light" data-feature="overview"></span>
   </form>
 </header>
 
@@ -74,6 +80,7 @@
   <div class="card"><div class="empty" id="landing">Loading…</div></div>
 </main>
 
+<script src="spendlight.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
@@ -81,6 +88,21 @@ const money = n => n == null ? "—" : "£" + Number(n).toLocaleString("en-GB", 
 const short = u => { try { const x = new URL(u); return x.pathname + x.search || "/"; } catch { return u || ""; } };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let charts = [], state = null;
+const TIPS = {
+  "Keyword": "Search term the domain ranks for (DataForSEO Labs estimate).",
+  "Pos": "Google organic position (DataForSEO Labs estimate). Arrow = change since DFS's previous check.",
+  "Volume": "Average monthly Google searches (DataForSEO Labs estimate).",
+  "KD": "Keyword difficulty 0–100: how hard to reach the top 10 (DataForSEO Labs estimate).",
+  "CPC": "Average Google Ads cost per click (DataForSEO Labs estimate).",
+  "kw|Traffic": "Estimated monthly visits from this keyword = volume × CTR at this position (DataForSEO Labs estimate).",
+  "URL": "The page that ranks (DataForSEO Labs estimate).",
+  "Domain": "Site competing for the same keywords (DataForSEO Labs estimate).",
+  "Common kw": "Keywords both sites rank for (DataForSEO Labs estimate).",
+  "Avg pos": "Competitor's average position on the shared keywords (DataForSEO Labs estimate).",
+  "Keywords": "Total keywords this site/page ranks for (DataForSEO Labs estimate).",
+  "Traffic": "Estimated monthly organic visits (DataForSEO Labs estimate)."
+};
+const tip = (id, l) => { const t = TIPS[id + "|" + l] || TIPS[l]; return t ? ` title="${esc(t)}"` : ""; };
 
 function params() { return new URLSearchParams(location.search); }
 
@@ -103,6 +125,7 @@ async function load(domain, loc, opts = {}) {
     if (!res.ok) throw new Error(data.detail || res.statusText);
     const hist = await fetch(`api/history?domain=${encodeURIComponent(data.domain)}&location=${loc}`).then(r => r.json());
     state = data; render(data, hist);
+    if (window.spendLights) window.spendLights.refresh();
   } catch (e) {
     $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`;
   } finally { btn.disabled = false; btn.textContent = "Analyse"; }
@@ -111,6 +134,7 @@ async function load(domain, loc, opts = {}) {
 function render(d, hist) {
   charts.forEach(c => c.destroy()); charts = [];
   const h = d.headline;
+  const src = `<div class="sub">Source: DataForSEO Labs estimate, as of ${esc((d.fetched_at || "").slice(0, 10))}</div>`;
   const snapOpts = hist.map(s => `<option value="${s.id}" ${s.id === d.snapshot_id ? "selected" : ""}>${s.fetched_at.replace("T", " ")} · ${fmt(s.headline.traffic)} traffic</option>`).join("");
   $("#app").innerHTML = `
     ${d.errors?.length ? `<div class="err">Some panels failed: ${esc(d.errors.join("; "))}</div>` : ""}
@@ -119,41 +143,43 @@ function render(d, hist) {
       <span>Snapshot <select id="snap">${snapOpts}</select></span>
       <span>${d.cached ? "from cache" : "fresh"} · cost $${(d.cost || 0).toFixed(3)}</span>
       <button class="ghost" id="refresh" style="padding:4px 10px;font-size:12px">Refresh (paid)</button>
+      <span class="spend-light" data-feature="overview" data-ts="${esc(d.fetched_at || "")}" data-cost="${d.cost || 0}"></span>
       <a href="./">All lookups</a>
     </div>
 
+    ${/^(www\.)?serenitybrides\.com$/i.test(d.domain) ? `<div class="err" style="background:var(--accent-bg);border-color:var(--accent-soft);color:var(--ink)">Positions here are DataForSEO Labs estimates. For our own rankings use Search Console (<a href="linking">Internal linking → Strength</a>, <a href="targets">Keyword targets</a>).</div>` : ""}
     <div class="grid tiles">
       <div class="card"><h2>Organic keywords</h2><div class="big">${fmt(h.keywords)}</div>
         <div class="moves"><span class="up">+${fmt(h.new)} new</span><span class="up">▲ ${fmt(h.up)}</span><span class="down">▼ ${fmt(h.down)}</span><span class="down">${fmt(h.lost)} lost</span></div></div>
       <div class="card"><h2>Organic traffic / mo</h2><div class="big">${fmt(h.traffic)}</div><div class="sub">Estimated visits from ranked keywords</div></div>
-      <div class="card"><h2>Traffic value</h2><div class="big">${money(h.traffic_value)}</div><div class="sub">What this traffic would cost in Google Ads</div></div>
+      <div class="card"><h2>Traffic value</h2><div class="big">${money(h.traffic_value)}</div><div class="sub">Estimated: what this traffic would cost in Google Ads</div></div>
       <div class="card"><h2>Competitors found</h2><div class="big">${fmt(d.competitors.length)}</div><div class="sub">Top by shared keywords</div></div>
     </div>
 
     <div class="grid two" style="margin-top:16px">
       <div class="card"><h2>Trend (12 months)
         <span class="seg" id="tsel"><button data-k="traffic" class="on">Traffic</button><button data-k="keywords">Keywords</button><button data-k="top10">Top 10</button></span></h2>
-        <div class="chart"><canvas id="trend"></canvas></div></div>
-      <div class="card"><h2>Ranking positions</h2><div class="chart"><canvas id="pos"></canvas></div></div>
+        <div class="chart"><canvas id="trend"></canvas></div>${src}</div>
+      <div class="card"><h2>Ranking positions</h2><div class="chart"><canvas id="pos"></canvas></div>${src}</div>
     </div>
 
     <div class="card" style="margin-top:16px"><h2>Top organic keywords (${d.keywords.length})
       <input class="filter" id="kwf" placeholder="Filter keywords…"></h2>
       <div class="scroll">${table("kw", [
         ["keyword","Keyword"],["position","Pos","num"],["volume","Volume","num"],["kd","KD","num"],["cpc","CPC","num"],["traffic","Traffic","num"],["url","URL"]
-      ], d.keywords)}</div></div>
+      ], d.keywords)}</div>${src}</div>
 
     <div class="grid halves" style="margin-top:16px">
       <div class="card"><h2>Main organic competitors</h2>
         <div class="scroll">${table("comp", [
           ["domain","Domain"],["common","Common kw","num"],["avg_position","Avg pos","num"],["keywords","Keywords","num"],["traffic","Traffic","num"]
-        ], d.competitors)}</div></div>
+        ], d.competitors)}</div>${src}</div>
       <div class="card"><h2>Competitive positioning <span class="sub" style="text-transform:none;letter-spacing:0">bubble = common keywords</span></h2>
         <div class="chart" style="height:340px"><canvas id="map"></canvas></div></div>
     </div>
 
     <div class="card" style="margin-top:16px"><h2>Top pages</h2>
-      <div class="scroll">${table("pages", [["url","URL"],["keywords","Keywords","num"],["traffic","Traffic","num"]], d.pages)}</div></div>
+      <div class="scroll">${table("pages", [["url","URL"],["keywords","Keywords","num"],["traffic","Traffic","num"]], d.pages)}</div>${src}</div>
   `;
 
   $("#snap").onchange = e => load(d.domain, d.location_code, {snapshot: e.target.value});
@@ -169,7 +195,7 @@ function render(d, hist) {
 const COLS = {};
 function table(id, cols, rows) {
   COLS[id] = cols;
-  return `<table id="t-${id}"><thead><tr>${cols.map(([k, l, c]) => `<th data-sort="${k}" data-t="${id}" class="${c || ""}">${l}</th>`).join("")}</tr></thead>
+  return `<table id="t-${id}"><thead><tr>${cols.map(([k, l, c]) => `<th data-sort="${k}" data-t="${id}" class="${c || ""}"${tip(id, l)}>${l}</th>`).join("")}</tr></thead>
     <tbody>${rowsHtml(id, rows)}</tbody></table>`;
 }
 function rowsHtml(id, rows) {
@@ -202,20 +228,23 @@ function sortTable(th) {
   fillRows(id, sorted);
 }
 
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color = cssv("--muted");
+Chart.defaults.borderColor = cssv("--line");
 const base = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
-  scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: "#eef0f4" } } } };
+  scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: cssv("--subtle") } } } };
 
 function drawTrend(key) {
   const old = charts.find(c => c.canvas.id === "trend"); if (old) { old.destroy(); charts = charts.filter(c => c !== old); }
   const t = state.trend;
   charts.push(new Chart($("#trend"), { type: "line",
-    data: { labels: t.map(r => r.month), datasets: [{ data: t.map(r => r[key]), borderColor: "#2f6fde", backgroundColor: "rgba(47,111,222,.12)", fill: true, tension: .3, pointRadius: 3 }] },
+    data: { labels: t.map(r => r.month), datasets: [{ data: t.map(r => r[key]), borderColor: cssv("--accent"), backgroundColor: cssv("--accent-fill"), fill: true, tension: .3, pointRadius: 3 }] },
     options: base }));
 }
 function drawPositions() {
   const p = state.positions;
   charts.push(new Chart($("#pos"), { type: "bar",
-    data: { labels: p.map(r => r.bucket), datasets: [{ data: p.map(r => r.count), backgroundColor: ["#1f4fa8","#2f6fde","#5b8ee8","#8fb2f0","#bcd0f6","#dfe8fa"] }] },
+    data: { labels: p.map(r => r.bucket), datasets: [{ data: p.map(r => r.count), backgroundColor: ["--seq1","--seq2","--seq3","--seq4","--seq5","--seq6"].map(cssv) }] },
     options: base }));
 }
 function drawMap() {
@@ -224,7 +253,7 @@ function drawMap() {
   const pts = c.map(r => ({ x: r.keywords, y: r.traffic, r: 4 + 18 * Math.sqrt(r.common / max), label: r.domain }));
   pts.push({ x: state.headline.keywords, y: state.headline.traffic, r: 10, label: state.domain, self: true });
   charts.push(new Chart($("#map"), { type: "bubble",
-    data: { datasets: [{ data: pts, backgroundColor: pts.map(p => p.self ? "rgba(227,116,47,.85)" : "rgba(47,111,222,.35)"), borderColor: pts.map(p => p.self ? "#e3742f" : "#2f6fde") }] },
+    data: { datasets: [{ data: pts, backgroundColor: pts.map(p => p.self ? cssv("--accent2-fill") : cssv("--accent-soft")), borderColor: pts.map(p => p.self ? cssv("--accent2") : cssv("--accent")) }] },
     options: { ...base,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${fmt(ctx.raw.x)} kw, ${fmt(ctx.raw.y)} traffic` } } },
       scales: { x: { type: "logarithmic", title: { display: true, text: "Organic keywords" } }, y: { type: "logarithmic", title: { display: true, text: "Organic traffic" } } } } }));

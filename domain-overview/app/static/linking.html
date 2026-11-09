@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Internal Linking</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f6fde; --good: #1f9d55; --bad: #d64545; --warn: #e3742f; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
+    --good-bg: #e1f5e9; --warn-bg: #fdf0e3; --purple: #7b3fa0; --purple-bg: #f3e8fb;
+    --bar: #dbe6fb; --hover-bg: #f5f8ff; --more-bg: #fafbfd; --hl: #fff1a8; --hl-ink: #000;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45; --good: #4cc485; --warn: #f0a060; --good-bg: #1b3326; --warn-bg: #3a2a1c; --purple: #d3a6ee; --purple-bg: #33243f; --bar: #2c4a7a; --hover-bg: #232a38; --more-bg: #1f2530; --hl: #4a4320; --hl-ink: #e4e7ee; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; margin-bottom: 10px; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--card); color: var(--ink); }
+  input { width: 230px; font-weight: 600; }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .grid { display: grid; gap: 16px; }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .two { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; min-width: 0; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .big { font-size: 26px; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--card); white-space: nowrap; }
+  table.sortable th { cursor: pointer; }
+  table.sortable th[data-dir="asc"]::after { content: " ▲"; }
+  table.sortable th[data-dir="desc"]::after { content: " ▼"; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { max-height: 520px; overflow: auto; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .wrap { word-break: break-word; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tabs button { background: var(--card); color: var(--muted); border-color: var(--line); }
+  .tabs button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .bar { background: var(--bar); height: 14px; border-radius: 3px; min-width: 2px; }
+  .bad { color: var(--bad); } .good { color: var(--good); }
+  details { margin-bottom: 12px; } summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+  summary .sub { display: inline; margin-left: 8px; font-weight: 400; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chips button { background: var(--card); color: var(--ink); border-color: var(--line); text-align: left; padding: 6px 12px; }
+  .chips button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .chips small { display: block; opacity: .75; font-size: 11px; }
+  tr.row { cursor: pointer; } tr.row:hover { background: var(--hover-bg); }
+  tr.more td { background: var(--more-bg); }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; background: var(--subtle); color: var(--muted); white-space: nowrap; }
+  .badge.pass { background: var(--good-bg); color: var(--good); } .badge.fail { background: var(--bad-bg); color: var(--bad); } .badge.wrong { background: var(--purple-bg); color: var(--purple); } .badge.partial, .badge.temp { background: var(--warn-bg); color: var(--warn); }
+  .todo { display: grid; grid-template-columns: minmax(160px, 1fr) 3fr; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--line); }
+  mark { background: var(--hl); color: var(--hl-ink); padding: 0 2px; }
+  .planbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .small { padding: 3px 10px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking" class="on">Internal linking</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a></nav></div>
+  <form id="f">
+    <input id="domain" name="domain" value="serenitybrides.com" placeholder="Your domain" required>
+    <button id="go">Crawl now</button>
+  </form>
+</header>
+<main id="app"></main>
+
+<script src="spendlight.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const path = u => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u || ""; } };
+const link = u => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(path(u))}</a>` : "—";
+const TABS = ["Health", "Strength", "Topic map", "Template rules", "Link to-dos", "Pages to build", "Progress"];
+let timer = null;
+const TIPS = {
+  "crawls|Pages": "Pages fetched by our crawler.",
+  "str|Page": "Crawled URL.",
+  "str|Line": "Product line guessed from URL, title and links.",
+  "str|PR": "Internal PageRank 0–100 (log scale) from our crawl's links. Only indexable pages.",
+  "str|Contextual inlinks": "Links from body content of other pages (crawl).",
+  "str|Boilerplate inlinks": "Links from nav, header, footer (crawl).",
+  "str|Clicks": "Clicks from Google, last 90 days (GSC).",
+  "str|Impressions": "Times shown in Google, last 90 days (GSC).",
+  "str|Avg position": "Impression-weighted average position, GSC.",
+  "str|Top query": "Query with most impressions for this page, GSC.",
+  "str|Opportunity": "Extra clicks if queries at positions 4–30 reached #3, ÷ (1 + PR/10), × line weight (bridal 1, MOB 0.6, bridesmaids 0.4). Higher = link here first.",
+  "wrong|Query": "Search query (GSC) where a page from the wrong product line ranks best.",
+  "wrong|Ranking page": "Page currently ranking best for the query (GSC).",
+  "wrong|Its line": "Product line of the ranking page.",
+  "wrong|Impressions": "Impressions for the query, last 90 days (GSC).",
+  "wrong|Position": "Average position of the ranking page for the query (GSC).",
+  "wrong|Better page": "Line hub that matches the query's wording.",
+  "old|URL": "URL still getting impressions in GSC, but not a live 200 page in the crawl.",
+  "old|Impressions": "Impressions, last 90 days (GSC).",
+  "old|Clicks": "Clicks, last 90 days (GSC).",
+  "old|Position": "Average position (GSC).",
+  "old|Crawl status": "What the crawl got for this URL (e.g. 404, redirect), or not crawled.",
+  "sect|Section": "First part of the URL path.",
+  "sect|Pages": "Crawled pages in this section.",
+  "sect|200 OK": "Pages in this section that returned 200 OK.",
+  "depth|Depth": "Clicks from the homepage (crawl). \"not linked\" = unreachable.",
+  "iss|Reason": "Why the page is excluded (noindex / canonical elsewhere).",
+  "iss|Depth": "Clicks from the homepage (crawl). \"not linked\" = unreachable.",
+  "iss|Pages with title": "How many pages share this title.",
+  "iss|Inlinks": "Contextual inlinks (crawl).",
+  "lnk|From": "Page containing the link.",
+  "lnk|To": "Link target.",
+  "lnk|Anchor": "Link text.",
+  "lnk|Status": "HTTP status when the crawl fetched the target.",
+  "lnk|Redirects to": "Where the target redirects. Link straight there instead.",
+  "rules|Rule": "Site-wide internal-link rule, checked on every page it applies to.",
+  "rules|Status": "pass = all pages comply; partial = some; fail = none.",
+  "rules|Failing / total": "Pages breaking the rule / pages it applies to.",
+  "rules|Fix": "What to change in the template.",
+  "sugg|Planned anchor": "Anchor text the plan asked for.",
+  "sugg|Live anchor": "Anchor(s) actually found on the source page at last crawl.",
+  "sugg|Status": "done / wrong anchor / partial (link only in boilerplate) / missing / gone (page no longer live).",
+  "sugg|Search Console, target page": "Target page's GSC clicks/impressions/position, 28 days before vs after marking done.",
+  "built|Proposed page": "New page suggested by the gap plan.",
+  "built|Slug": "Planned URL, or the live URL once built.",
+  "built|Status": "Built = a live 200 page with this slug was found in the crawl.",
+  "gap|Primary keyword": "Main keyword the new page should target.",
+  "gap|Monthly volume": "GA = Google Ads UK monthly, from keyword targets doc; est. = DataForSEO Labs estimate; \"~\" = estimated from GSC impressions ÷ 3 months.",
+  "gap|Sources": "Where the idea came from: GSC queries, competitor pages, DFS keyword ideas.",
+  "gap|Why": "Reason given by the planner."
+};
+const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
+
+async function home() {
+  const rows = await fetch("api/crawls?domain=" + encodeURIComponent($("#domain").value)).then(r => r.ok ? r.json() : []);
+  $("#app").innerHTML = `<div class="card"><h2>Past crawls</h2>${rows.length ? `<table><tr><th>Domain</th><th>Started</th><th>Status</th><th class="num"${tip("crawls|Pages")}>Pages</th></tr>
+    ${rows.map(r => `<tr><td><a href="?crawl=${r.id}">${esc(r.domain)}</a></td><td>${esc(r.started_at.replace("T", " "))}</td>
+      <td class="${r.status === "error" ? "bad" : ""}">${esc(r.status)}${r.error ? ` — ${esc(r.error)}` : ""}</td><td class="num">${fmt(r.pages)}</td></tr>`).join("")}</table>`
+    : `<div class="sub">No crawls yet. Click "Crawl now".</div>`}</div>`;
+}
+
+async function watch(id) {
+  clearInterval(timer);
+  const tick = async () => {
+    const c = await fetch("api/crawl/" + id).then(r => r.json());
+    if (c.status === "running") {
+      $("#go").disabled = true;
+      $("#app").innerHTML = `<div class="card"><h2>Crawling ${esc(c.domain)}…</h2><div class="big">${fmt(c.pages)}</div><div class="sub">pages fetched so far</div></div>`;
+      return;
+    }
+    clearInterval(timer); $("#go").disabled = false;
+    if (c.status === "error") { $("#app").innerHTML = `<div class="err">Crawl failed: ${esc(c.error)}</div>`; return; }
+    $("#domain").value = c.domain;
+    const h = await fetch(`api/crawl/${id}/health`).then(r => r.json());
+    renderCrawl(c, h);
+  };
+  await tick();
+  if (!$("#go").disabled) return;
+  timer = setInterval(tick, 2000);
+}
+
+let cur = null;
+function renderCrawl(c, h) {
+  cur = { c, h, strength: null, plans: [], plan: null, planId: null, line: "all", tab: new URLSearchParams(location.search).get("tab") || "Health" };
+  $("#app").innerHTML = `<div class="tabs">${TABS.map(t => `<button data-tab="${t}" >${t}</button>`).join("")}</div>
+    <div class="sub" style="margin-bottom:12px">Crawl #${c.id} of ${esc(c.domain)} · ${esc(c.started_at.replace("T", " "))} · <a href="linking">all crawls</a></div>
+    <div id="tab"></div>`;
+  showTab(cur.tab);
+}
+
+async function showTab(t) {
+  cur.tab = t;
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  clearInterval(planTimer); clearInterval(gapTimer);
+  if (t === "Health") { $("#tab").innerHTML = healthTab(cur.h); return; }
+  if (PLAN_TABS.includes(t)) { await loadPlans(); return; }
+  if (t === "Pages to build") { await loadGaps(); return; }
+  if (t === "Progress") { await loadProgress(); return; }
+  if (!cur.strength) {
+    $("#tab").innerHTML = `<div class="sub">Loading Search Console data and link strength…</div>`;
+    const r = await fetch(`api/crawl/${cur.c.id}/strength`);
+    if (!r.ok) { $("#tab").innerHTML = `<div class="err">${esc((await r.json()).detail || r.statusText)}</div>`; return; }
+    cur.strength = await r.json();
+    cur.line = "all"; cur.sort = { key: "opportunity", dir: -1 };
+  }
+  if (cur.tab === "Strength") $("#tab").innerHTML = strengthTab(cur.strength);
+}
+
+const LINE_NAMES = { bridal: "Bridal", bridesmaids: "Bridesmaids", mob: "MOB", accessories: "Accessories", general: "General" };
+const COLS = [["path", "Page", 0], ["line", "Line", 0], ["pagerank", "PR", 1], ["contextual_inlinks", "Contextual inlinks", 1],
+  ["boilerplate_inlinks", "Boilerplate inlinks", 1], ["clicks", "Clicks", 1], ["impressions", "Impressions", 1],
+  ["position", "Avg position", 1], ["top", "Top query", 0], ["opportunity", "Opportunity", 1]];
+
+function strengthTab(s) {
+  const g = s.gsc;
+  const all = Object.values(s.lines).reduce((a, l) => ({ pages: a.pages + l.pages, impressions: a.impressions + l.impressions, clicks: a.clicks + l.clicks }), { pages: 0, impressions: 0, clicks: 0 });
+  const chip = (k, name, t) => `<button data-line="${k}" class="${cur.line === k ? "on" : ""}">${name}<small>${fmt(t.pages)} pages · ${fmt(t.impressions)} impr · ${fmt(t.clicks)} clicks</small></button>`;
+  return `${g.configured ? "" : `<div class="err">Search Console not configured. Link metrics are shown without clicks, impressions or opportunity.</div>`}
+    ${g.error ? `<div class="err">Search Console: ${esc(g.error)}</div>` : ""}
+    ${g.fetched_at ? `<div class="sub" style="margin-bottom:10px">Search Console ${esc(g.start)} to ${esc(g.end)} · fetched ${esc(g.fetched_at.replace("T", " "))} UTC</div>` : ""}
+    <div class="chips">${chip("all", "All", all)}${Object.keys(LINE_NAMES).map(k => chip(k, LINE_NAMES[k], s.lines[k])).join("")}</div>
+    <div class="card"><h2>Pages <small class="sub">PR is a 0-100 log scale. Opportunity = extra clicks if queries at positions 4-30 reached position 3, divided by (1 + PR/10). Click a row for its top queries.</small></h2>
+      <div class="scroll" style="max-height:640px">${pagesTable(s)}</div></div>
+    <div class="card"><h2>Wrong page ranking <small class="sub">${fmt(s.wrong_page.length)} queries</small></h2>
+      ${s.wrong_page.length ? `<div class="scroll"><table class="sortable"><tr><th${tip("wrong|Query")}>Query</th><th${tip("wrong|Ranking page")}>Ranking page</th><th${tip("wrong|Its line")}>Its line</th><th class="num"${tip("wrong|Impressions")}>Impressions</th><th class="num"${tip("wrong|Position")}>Position</th><th${tip("wrong|Better page")}>Better page</th></tr>
+      ${s.wrong_page.map(w => `<tr><td>${esc(w.query)}</td><td class="wrap">${link(w.page)}</td><td>${esc(LINE_NAMES[w.page_line])}</td><td class="num">${fmt(w.impressions)}</td><td class="num">${w.position}</td><td class="wrap">${link(w.suggested)}</td></tr>`).join("")}</table></div>` : `<div class="sub good">None.</div>`}</div>
+    <div class="card"><h2>Old URLs still in Google (redirect candidates) <small class="sub">${fmt(s.gsc_unmatched.length)} URLs not a 200 page in this crawl</small></h2>
+      ${s.gsc_unmatched.length ? `<div class="scroll"><table class="sortable"><tr><th${tip("old|URL")}>URL</th><th class="num"${tip("old|Impressions")}>Impressions</th><th class="num"${tip("old|Clicks")}>Clicks</th><th class="num"${tip("old|Position")}>Position</th><th class="num"${tip("old|Crawl status")}>Crawl status</th></tr>
+      ${s.gsc_unmatched.map(u => `<tr><td class="wrap">${link(u.page)}</td><td class="num">${fmt(u.impressions)}</td><td class="num">${fmt(u.clicks)}</td><td class="num">${u.position}</td><td class="num">${u.status ?? "not crawled"}</td></tr>`).join("")}</table></div>` : `<div class="sub good">None.</div>`}</div>`;
+}
+
+function pagesTable(s) {
+  const { key, dir } = cur.sort;
+  const val = (r, k) => k === "path" ? path(r.url) : k === "top" ? (r.top_queries[0]?.query ?? "") : r[k];
+  const rows = s.pages.filter(r => cur.line === "all" || r.line === cur.line).sort((a, b) => {
+    const x = val(a, key), y = val(b, key);
+    if (x == null || x === "") return 1;
+    if (y == null || y === "") return -1;
+    return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * dir;
+  }).slice(0, 500);
+  return `<table><tr>${COLS.map(([k, n, num]) => `<th data-sort="${k}"${tip("str|"+n)} ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
+    ${rows.map((r, i) => `<tr class="row" data-i="${i}"><td class="wrap">${link(r.url)}</td><td>${esc(LINE_NAMES[r.line])}</td><td class="num">${r.indexable ? r.pagerank.toFixed(1) : "—"}</td>
+      <td class="num">${fmt(r.contextual_inlinks)}</td><td class="num">${fmt(r.boilerplate_inlinks)}</td><td class="num">${fmt(r.clicks)}</td><td class="num">${fmt(r.impressions)}</td>
+      <td class="num">${r.position ?? "—"}</td><td>${esc(r.top_queries[0]?.query ?? "")}</td><td class="num">${r.discontinued ? `${r.opportunity ? r.opportunity.toFixed(1) : "—"} <span class="sub" title="Discontinued range, last stock only: linkable while unsold, links are temporary">last stock</span>` : r.opportunity ? r.opportunity.toFixed(1) : "—"}${!r.discontinued && r.range_rtw && r.range_rtw[0] ? ` <span class="sub" title="Individual dresses in this range on the Ready to wear page; the range itself is live">${r.range_rtw[0]}/${r.range_rtw[1]} off the peg</span>` : ""}</td></tr>
+      <tr class="more" hidden><td colspan="10">${r.top_queries.length ? `<table><tr><th>Query</th><th class="num">Impressions</th><th class="num">Clicks</th><th class="num">Position</th></tr>
+        ${r.top_queries.map(q => `<tr><td>${esc(q.query)}</td><td class="num">${fmt(q.impressions)}</td><td class="num">${fmt(q.clicks)}</td><td class="num">${q.position}</td></tr>`).join("")}</table>` : `<span class="sub">No Search Console queries.</span>`}
+        ${r.rank_in_line ? `<div class="sub">Opportunity rank in ${esc(LINE_NAMES[r.line])}: #${r.rank_in_line}</div>` : ""}</td></tr>`).join("")}</table>
+    ${s.pages.length > 500 ? `<div class="note">Showing the top 500 of the current filter.</div>` : ""}`;
+}
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (!cur?.strength || cur.tab !== "Strength") return;
+  const chip = t.closest(".chips button"), th = t.closest("th[data-sort]"), row = t.closest("tr.row");
+  if (chip) cur.line = chip.dataset.line;
+  else if (th) { const k = th.dataset.sort; cur.sort = { key: k, dir: cur.sort.key === k ? -cur.sort.dir : (["path", "line", "top"].includes(k) ? 1 : -1) }; }
+  else if (row && !t.closest("a")) { row.nextElementSibling.hidden = !row.nextElementSibling.hidden; return; }
+  else return;
+  const sc = document.querySelector(".card .scroll"); const top = sc?.scrollTop || 0;
+  $("#tab").innerHTML = strengthTab(cur.strength);
+  document.querySelector(".card .scroll").scrollTop = top;
+});
+document.addEventListener("click", e => { const b = e.target.closest(".tabs button[data-tab]"); if (b && !b.disabled && cur) showTab(b.dataset.tab); });
+
+// ---- Link plan tabs ----
+const PLAN_TABS = ["Topic map", "Template rules", "Link to-dos"];
+let planTimer = null;
+const fromUrl = () => new URLSearchParams(location.search).get("plan");
+
+async function loadPlans(pickId) {
+  const plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(r => r.ok ? r.json() : []);
+  cur.plans = plans;
+  const want = pickId ?? cur.planId ?? fromUrl();
+  const sel = plans.find(p => String(p.id) === String(want)) || plans.find(p => p.status === "done") || plans[0];
+  if (!sel) { cur.plan = null; cur.planId = null; renderPlanTab(); return; }
+  cur.planId = sel.id;
+  await pollPlan();
+}
+
+async function pollPlan() {
+  clearInterval(planTimer);
+  const tick = async () => {
+    const r = await fetch("api/plan/" + cur.planId);
+    if (!r.ok) { clearInterval(planTimer); return; }
+    cur.plan = await r.json();
+    if (cur.plan.status !== "running") { clearInterval(planTimer); if (window.spendLights) window.spendLights.refresh(); cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json()); }
+    if (PLAN_TABS.includes(cur.tab)) renderPlanTab();
+    return cur.plan.status;
+  };
+  if ((await tick()) === "running") planTimer = setInterval(tick, 2000);
+}
+
+async function buildPlan() {
+  const r = await fetch(`api/crawl/${cur.c.id}/plan`, { method: "POST" });
+  const d = await r.json();
+  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); return; }
+  cur.planId = d.id; cur.line = "all";
+  cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json());
+  pollPlan();
+}
+
+function slight(feature, r) {
+  const ts = r && r.status === "done" ? (r.finished_at || r.created_at) : "";
+  return `<span class="spend-light" data-feature="${feature}"${ts ? ` data-ts="${esc(ts)}" data-cost="${r.cost || 0}"` : ""}></span>`;
+}
+function planHeader() {
+  const p = cur.plan, running = p && p.status === "running";
+  const picker = cur.plans.length > 1 ? `<select id="planpick">${cur.plans.map(x => `<option value="${x.id}" ${x.id === cur.planId ? "selected" : ""}>#${x.id} · ${esc(x.created_at.replace("T", " "))} · ${esc(x.status)}</option>`).join("")}</select>` : "";
+  let h = `<div class="planbar"><button id="buildplan" ${running ? "disabled" : ""}>Build link plan</button>${slight("plans", p)}${picker}
+    ${running ? `<span class="sub">${esc(p.progress || "Working…")}</span>` : ""}</div>`;
+  if (!p) return h + `<div class="sub">No link plan for this crawl yet. Click "Build link plan".</div>`;
+  if (p.status === "error") return h + `<div class="err">Plan failed: ${esc(p.error)}</div>`;
+  if (running) return h;
+  const d = p.data || {};
+  h += `<div class="sub" style="margin-bottom:10px">Plan #${p.id} · model ${esc(p.model || "none")} · cost $${(p.cost || 0).toFixed(3)} · ${esc((p.finished_at || "").replace("T", " "))}</div>`;
+  if (d.llm_used === false) h += `<div class="note" style="margin:0 0 10px">Built without the model: generic anchors</div>`;
+  h += (d.warnings || []).map(w => `<div class="err">${esc(w)}</div>`).join("");
+  return h;
+}
+
+function renderPlanTab() {
+  const p = cur.plan;
+  let body = "";
+  if (p && p.status === "done" && p.data) body = cur.tab === "Topic map" ? topicsView(p.data) : cur.tab === "Template rules" ? rulesView(p.data) : todosView(p.data);
+  $("#tab").innerHTML = planHeader() + body;
+}
+
+function rulesView(d) {
+  const rules = d.template_rules || [];
+  if (!rules.length) return `<div class="sub">No template rules in this plan.</div>`;
+  return `<div class="card"><h2>Template rules</h2><table><tr><th${tip("rules|Rule")}>Rule</th><th${tip("rules|Status")}>Status</th><th class="num"${tip("rules|Failing / total")}>Failing / total</th><th${tip("rules|Fix")}>Fix</th></tr>
+    ${rules.map((r, i) => `<tr class="row" data-rule="${i}"><td><b>${esc(r.name)}</b><div class="sub">${esc(r.description)}</div></td>
+      <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td class="num">${fmt(r.failing)} / ${fmt(r.total)}</td><td>${esc(r.fix)}</td></tr>
+      <tr class="more" hidden><td colspan="4">${(r.examples || []).length ? `<table><tr><th>Page</th><th>Detail</th></tr>${r.examples.map(x => `<tr><td class="wrap">${link(x.url)}</td><td>${esc(x.detail)}</td></tr>`).join("")}</table>` : `<span class="sub">No examples.</span>`}</td></tr>`).join("")}</table></div>`;
+}
+
+function topicsView(d) {
+  const t = d.topics || [];
+  if (!t.length) return `<div class="sub">No topics in this plan.</div>`;
+  return t.map(x => `<div class="card"><h2>${esc(x.name)} <small class="sub">${esc(LINE_NAMES[x.line] || x.line)} · hub ${link(x.hub)} · ${fmt(x.members.length)} pages</small></h2>
+    <div class="wrap">${x.members.map(m => link(m)).join(" · ")}</div></div>`).join("");
+}
+
+function anchorHtml(s) {
+  const a = s.anchor || "";
+  if (s.in_text && s.context) {
+    const i = s.context.toLowerCase().indexOf(a.toLowerCase());
+    if (i >= 0) return `${esc(s.context.slice(0, i))}<mark>${esc(s.context.slice(i, i + a.length))}</mark>${esc(s.context.slice(i + a.length))}`;
+    return esc(s.context);
+  }
+  const t = s.sentence || a, i = t.toLowerCase().indexOf(a.toLowerCase());
+  return i >= 0 ? `${esc(t.slice(0, i))}<b>${esc(t.slice(i, i + a.length))}</b>${esc(t.slice(i + a.length))}` : `${esc(t)} <b>(${esc(a)})</b>`;
+}
+
+function todoGroups(d) {
+  const g = {};
+  for (const s of d.suggestions || []) if (cur.line === "all" || s.line === cur.line) (g[s.src] ||= []).push(s);
+  return Object.entries(g).map(([src, items]) => ({ src, items: items.sort((a, b) => b.priority - a.priority), sum: items.reduce((n, s) => n + s.priority, 0) })).sort((a, b) => b.sum - a.sum);
+}
+
+function todosView(d) {
+  const by = (d.stats && d.stats.by_line) || {}, total = (d.suggestions || []).length;
+  const chip = (k, name, n) => `<button data-pline="${k}" class="${cur.line === k ? "on" : ""}">${name}<small>${fmt(n)} links</small></button>`;
+  const groups = todoGroups(d);
+  return `<div class="chips">${chip("all", "All", total)}${Object.keys(LINE_NAMES).map(k => chip(k, LINE_NAMES[k], by[k] || 0)).join("")}</div>
+    ${groups.length ? groups.map((g, gi) => `<div class="card"><h2><span class="wrap">${link(g.src)} <small class="sub">${g.items.length} link${g.items.length > 1 ? "s" : ""} to add</small></span>
+      <button class="small" data-copy="${gi}">Copy</button></h2>
+      ${g.items.map(s => `<div class="todo"><div class="wrap">${link(s.dst)}<div><span class="badge">${esc(s.kind)}</span> ${s.temporary ? `<span class="badge temp" title="Last stock: remove the link when the range sells out">temporary</span>` : ""}</div></div>
+        <div><div>${anchorHtml(s)}</div><div class="sub">${esc(s.reason)}</div></div></div>`).join("")}</div>`).join("") : `<div class="sub">No link to-dos for this filter.</div>`}`;
+}
+
+function copyText(g) {
+  return g.items.map(s => `${s.dst}\nAnchor: ${s.anchor}\n${s.in_text ? "In text: " + (s.context || "") : "Add: " + (s.sentence || "")}`).join("\n\n");
+}
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (!cur || !PLAN_TABS.includes(cur.tab)) return;
+  if (t.id === "buildplan") { buildPlan(); return; }
+  const row = t.closest("tr.row[data-rule]");
+  if (row && !t.closest("a")) { row.nextElementSibling.hidden = !row.nextElementSibling.hidden; return; }
+  const chip = t.closest("button[data-pline]");
+  if (chip) { cur.line = chip.dataset.pline; renderPlanTab(); return; }
+  const cp = t.closest("button[data-copy]");
+  if (cp && cur.plan?.data) {
+    const g = todoGroups(cur.plan.data)[+cp.dataset.copy];
+    navigator.clipboard.writeText(`${g.src}\n\n${copyText(g)}`).then(() => { cp.textContent = "Copied"; setTimeout(() => cp.textContent = "Copy", 1500); });
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "planpick") { cur.planId = +e.target.value; pollPlan(); }
+});
+
+
+// ---- Pages to build ----
+const volTag = r => r.volume_is_proxy || r.volume_source === "gsc" ? "" : r.volume_source === "targets" ? ` <span class="sub" title="Google Ads UK monthly, from keyword targets doc">GA</span>`
+  : r.volume_source === "mixed" ? ` <span class="sub" title="Some keywords: Google Ads UK monthly from keyword targets doc; others: DataForSEO Labs estimate">GA/est.</span>`
+  : ` <span class="sub" title="DataForSEO Labs estimate">est.</span>`;
+const SRC_NAMES = { gsc: "Search Console", competitor: "competitor", ideas: "keyword ideas" };
+const badges = srcs => (srcs || []).map(x => `<span class="badge">${esc(SRC_NAMES[x] || x)}</span>`).join(" ");
+let gapTimer = null;
+const GCOLS = [["title", "Title", 0], ["slug", "Slug", 0], ["line", "Line", 0], ["primary_keyword", "Primary keyword", 0],
+  ["volume", "Monthly volume", 1], ["sources", "Sources", 0], ["why", "Why", 0]];
+
+async function loadGaps(pickId) {
+  const runs = await fetch(`api/crawl/${cur.c.id}/gaps`).then(r => r.ok ? r.json() : []);
+  cur.gaps = runs;
+  const sel = runs.find(g => String(g.id) === String(pickId ?? cur.gapId)) || runs.find(g => g.status === "done") || runs[0];
+  cur.gapId = sel ? sel.id : null;
+  cur.gline = cur.gline || "all"; cur.gsort = cur.gsort || { key: "score", dir: -1 };
+  if (!sel) { cur.gap = null; renderGaps(); return; }
+  await pollGaps();
+}
+
+async function pollGaps() {
+  clearInterval(gapTimer);
+  const tick = async () => {
+    const r = await fetch("api/gaps/" + cur.gapId);
+    if (!r.ok) { clearInterval(gapTimer); return; }
+    cur.gap = await r.json();
+    if (cur.gap.status !== "running") { clearInterval(gapTimer); if (window.spendLights) window.spendLights.refresh(); cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json()); }
+    if (cur.tab === "Pages to build") renderGaps();
+    return cur.gap.status;
+  };
+  if ((await tick()) === "running") gapTimer = setInterval(tick, 2000);
+}
+
+async function startGaps() {
+  const r = await fetch(`api/crawl/${cur.c.id}/gaps`, { method: "POST" });
+  const d = await r.json();
+  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); return; }
+  cur.gapId = d.id;
+  cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json());
+  pollGaps();
+}
+
+function gapRows(d) {
+  const { key, dir } = cur.gsort;
+  const val = r => key === "sources" ? (r.sources || []).join(",") : r[key];
+  return (d.pages || []).filter(r => cur.gline === "all" || r.line === cur.gline).sort((a, b) => {
+    const x = val(a), y = val(b);
+    if (x == null || x === "") return 1;
+    if (y == null || y === "") return -1;
+    return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * dir;
+  });
+}
+
+function renderGaps() {
+  const g = cur.gap, running = g && g.status === "running";
+  const picker = (cur.gaps || []).length > 1 ? `<select id="gappick">${cur.gaps.map(x => `<option value="${x.id}" ${x.id === cur.gapId ? "selected" : ""}>#${x.id} · ${esc(x.created_at.replace("T", " "))} · ${esc(x.status)}</option>`).join("")}</select>` : "";
+  let h = `<div class="planbar"><button id="findgaps" ${running ? "disabled" : ""}>Find page gaps</button>${slight("gaps", g)}${picker}
+    ${running ? `<span class="sub">${esc(g.progress || "Working…")}</span>` : ""}</div>`;
+  if (!g) { $("#tab").innerHTML = h + `<div class="sub">No page-gap run for this crawl yet. Click "Find page gaps". This only recommends pages; nothing is created on the site.</div>`; return; }
+  if (g.status === "error") { $("#tab").innerHTML = h + `<div class="err">Gap run failed: ${esc(g.error)}</div>`; return; }
+  if (running || !g.data) { $("#tab").innerHTML = h; return; }
+  const d = g.data, lines = {};
+  for (const p of d.pages) lines[p.line] = (lines[p.line] || 0) + 1;
+  const chip = (k, name, n) => `<button data-gline="${k}" class="${cur.gline === k ? "on" : ""}">${name}<small>${fmt(n)} pages</small></button>`;
+  const rows = gapRows(d), { key, dir } = cur.gsort;
+  h += `<div class="sub" style="margin-bottom:10px">Run #${g.id} · as of ${esc((g.created_at || "").replace("T", " "))} · ${d.llm_used ? "model " + esc(d.model) : "built without the model"} · cost $${(g.cost || 0).toFixed(3)} ·
+    ${fmt(d.sources.gsc)} Search Console, ${fmt(d.sources.competitor)} competitor, ${fmt(d.sources.ideas)} keyword-idea keywords · ${fmt(d.dropped_covered)} dropped as already covered</div>`;
+  if (d.llm_used === false) h += `<div class="note" style="margin:0 0 10px">Built without the model: one generic page per keyword cluster</div>`;
+  h += (d.warnings || []).slice(0, 8).map(w => `<div class="err">${esc(w)}</div>`).join("");
+  h += `<div class="chips">${chip("all", "All", d.pages.length)}${Object.keys(LINE_NAMES).map(k => chip(k, LINE_NAMES[k], lines[k] || 0)).join("")}</div>
+    <div class="card"><h2>Pages to build <small class="sub">Score = monthly volume × (1 − difficulty) × line weight, ×1.5 when Google already shows us for it. "~" = estimated from Search Console impressions ÷ 3. Click a row for details.</small></h2>
+    ${rows.length ? `<div class="scroll" style="max-height:700px"><table><tr>${GCOLS.map(([k, n, num]) => `<th data-gsort="${k}"${tip("gap|"+n)} ${num ? 'class="num"' : ""} ${key === k ? `data-dir="${dir > 0 ? "asc" : "desc"}"` : ""} style="cursor:pointer">${n}</th>`).join("")}</tr>
+    ${rows.map(r => `<tr class="row" data-gap="1"><td><b>${esc(r.title)}</b><div class="sub">${esc(r.page_type)}</div></td><td class="wrap">${esc(r.slug)}</td><td>${esc(LINE_NAMES[r.line] || r.line)}</td>
+      <td>${esc(r.primary_keyword)}</td><td class="num">${r.volume_is_proxy ? "~" : ""}${fmt(r.volume)}${volTag(r)}</td><td>${badges(r.sources)}</td><td>${esc(r.why)}</td></tr>
+      <tr class="more" hidden><td colspan="7">
+        <div><b>Secondary keywords:</b> ${r.secondary_keywords.length ? r.secondary_keywords.map(esc).join(", ") : "—"}</div>
+        <div><b>Hub:</b> ${r.hub ? link(r.hub) : "—"}</div>
+        <div><b>Link to it from:</b> ${r.link_from.length ? r.link_from.map(link).join(" · ") : "—"}</div>
+        ${r.gsc && r.gsc.impressions ? `<div><b>Search Console:</b> ${fmt(r.gsc.impressions)} impressions in 90 days${r.gsc.best_position ? `, best position ${r.gsc.best_position}` : ""}</div>` : ""}
+        <div><b>Competitor URLs:</b> ${r.competitor_urls.length ? r.competitor_urls.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\//, ""))}</a>`).join(" · ") : "—"}</div>
+        <div class="sub">Score ${fmt(r.score)}${r.kd != null ? ` · difficulty ${Math.round(r.kd)} <span title="DataForSEO Labs estimate">(Labs est.)</span>` : " · difficulty unknown"}</div></td></tr>`).join("")}</table></div>` : `<div class="sub">No proposed pages for this filter.</div>`}</div>
+    <div class="card"><h2>Improve existing pages instead <small class="sub">${fmt((d.improve || []).length)} pages</small></h2>
+    ${(d.improve || []).length ? d.improve.map(i => `<div class="todo"><div class="wrap">${link(i.url)}<div class="sub">${esc(i.title || "")}</div></div>
+      <div><div>${i.keywords.map(esc).join(", ")}</div><div class="sub">${esc(i.why)}</div></div></div>`).join("") : `<div class="sub">None.</div>`}</div>`;
+  $("#tab").innerHTML = h;
+}
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (!cur || cur.tab !== "Pages to build") return;
+  if (t.id === "findgaps") { startGaps(); return; }
+  const chip = t.closest("button[data-gline]"), th = t.closest("th[data-gsort]"), row = t.closest("tr.row[data-gap]");
+  if (chip) cur.gline = chip.dataset.gline;
+  else if (th) { const k = th.dataset.gsort; cur.gsort = { key: k, dir: cur.gsort.key === k ? -cur.gsort.dir : (["title", "slug", "line", "primary_keyword", "sources", "why"].includes(k) ? 1 : -1) }; }
+  else if (row && !t.closest("a")) { row.nextElementSibling.hidden = !row.nextElementSibling.hidden; return; }
+  else return;
+  renderGaps();
+});
+document.addEventListener("change", e => { if (e.target.id === "gappick") { cur.gapId = +e.target.value; pollGaps(); } });
+
+// ---- Progress ----
+const ST_CLASS = { done: "pass", "wrong anchor": "wrong", partial: "partial", missing: "fail", gone: "fail", open: "" };
+
+async function loadProgress(pickId) {
+  const plans = (await fetch(`api/crawl/${cur.c.id}/plans`).then(r => r.ok ? r.json() : [])).filter(p => p.status === "done");
+  cur.pplans = plans;
+  const sel = plans.find(p => String(p.id) === String(pickId ?? cur.pplan)) || plans[0];
+  cur.pplan = sel ? sel.id : null;
+  cur.prog = null; cur.pnote = null;
+  if (sel) { const r = await fetch(`api/plan/${sel.id}/progress`); if (r.ok) cur.prog = await r.json(); }
+  renderProgress();
+}
+
+async function checkPlan() {
+  const b = $("#checkplan"); b.disabled = true; b.textContent = "Checking…";
+  const r = await fetch(`api/plan/${cur.pplan}/check`, { method: "POST" });
+  const d = await r.json();
+  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); b.disabled = false; b.textContent = "Check against latest crawl"; return; }
+  cur.prog = d; renderProgress();
+}
+
+function gscCell(g) {
+  if (!g) return `<span class="sub">no data yet</span>`;
+  const f = (a, b, dec) => `${a == null ? "—" : Number(a).toFixed(dec ?? 0)} → ${b == null ? "—" : Number(b).toFixed(dec ?? 0)}`;
+  return `<div>${f(g.before.clicks, g.after.clicks)} clicks</div><div>${f(g.before.impressions, g.after.impressions)} impr</div>
+    <div>pos ${f(g.before.position, g.after.position, 1)}</div><div class="sub">${g.days} days either side${g.data_end ? `, Search Console data to ${esc(g.data_end)}` : ""}</div>`;
+}
+
+function renderProgress() {
+  const p = cur.prog, plans = cur.pplans || [];
+  const picker = plans.length ? `<select id="pplanpick">${plans.map(x => `<option value="${x.id}" ${x.id === cur.pplan ? "selected" : ""}>Plan #${x.id} · ${esc(x.created_at.replace("T", " "))}</option>`).join("")}</select>` : "";
+  let h = `<div class="planbar">${picker}<button id="checkplan" ${plans.length ? "" : "disabled"}>Check against latest crawl</button></div>
+    <div class="note" style="margin:0 0 12px">Re-crawl first after making changes.</div>`;
+  if (!plans.length) { $("#tab").innerHTML = h + `<div class="sub">No finished link plan for this crawl. Build one on the Link to-dos tab first.</div>`; return; }
+  if (!p) { $("#tab").innerHTML = h; return; }
+  const c = p.counts;
+  h += (p.notes || []).map(n => `<div class="err">${esc(n)}</div>`).join("");
+  h += p.checked_crawl_id ? `<div class="sub" style="margin-bottom:10px">Checked against crawl #${p.checked_crawl_id}</div>` : `<div class="sub" style="margin-bottom:10px">Not checked yet.</div>`;
+  h += `<div class="grid tiles">${tile("Done", c.done, "Contextual link in place")}${tile("Wrong anchor", c["wrong anchor"], "Linked in content, different anchor text")}${tile("Partial", c.partial, "Linked, but not in the content")}${tile("Missing", c.missing, "No link yet")}
+    ${tile("Gone", c.gone, "Source or target no longer a 200 page")}${tile("% done", p.pct_done, `of ${fmt(p.total)} links`)}</div>
+    <div class="card"><h2>Suggestions</h2><div class="scroll" style="max-height:640px"><table class="sortable"><tr><th>From</th><th>To</th><th${tip("sugg|Planned anchor")}>Planned anchor</th><th${tip("sugg|Live anchor")}>Live anchor</th><th${tip("sugg|Status")}>Status</th><th>Search Console, target page</th></tr>
+    ${p.suggestions.map(s => `<tr><td class="wrap">${link(s.src)}</td><td class="wrap">${link(s.dst)}</td><td>${esc(s.planned_anchor || "")}</td>
+      <td>${s.anchor_data === false ? `<span class="sub">not recorded</span>` : (s.live_anchors || []).map(a => esc(a || "(no text)")).join("<br>")}</td>
+      <td><span class="badge ${ST_CLASS[s.status] || ""}">${esc(s.status)}</span>${s.done_at ? `<div class="sub">done ${esc(s.done_at.slice(0, 10))}</div>` : ""}</td>
+      <td>${s.status === "done" ? gscCell(s.gsc) : ""}</td></tr>`).join("")}</table></div></div>
+    <div class="card"><h2>Pages built <small class="sub">proposed pages from the latest gap run that now exist</small></h2>
+    ${(p.built || []).length ? `<table><tr><th${tip("built|Proposed page")}>Proposed page</th><th${tip("built|Slug")}>Slug</th><th${tip("built|Status")}>Status</th></tr>${p.built.map(b => `<tr><td>${esc(b.title)}</td><td class="wrap">${b.url ? link(b.url) : esc(b.slug)}</td>
+      <td><span class="badge ${b.built ? "pass" : ""}">${b.built ? "built" : "not yet"}</span></td></tr>`).join("")}</table>` : `<div class="sub">${p.checked_crawl_id ? "No page-gap run to compare with." : "Check against a crawl first."}</div>`}</div>`;
+  $("#tab").innerHTML = h;
+}
+
+document.addEventListener("click", e => { if (cur?.tab === "Progress" && e.target.id === "checkplan") checkPlan(); });
+document.addEventListener("change", e => { if (e.target.id === "pplanpick") loadProgress(+e.target.value); });
+
+
+function tile(label, n, sub, bad) {
+  return `<div class="card"><h2>${label}</h2><div class="big ${bad && n ? "bad" : ""}">${fmt(n)}</div><div class="sub">${sub}</div></div>`;
+}
+
+function healthTab(h) {
+  const t = h.totals;
+  const maxDepth = Math.max(1, ...h.depth_histogram.map(d => d.pages));
+  return `
+    <div class="grid tiles">
+      ${tile("Pages", t.pages, Object.entries(t.status).map(([k, v]) => `${v} ${k}`).join(" · "))}
+      ${tile("Orphans", h.orphans.count, "In sitemap, no inlinks", true)}
+      ${tile("Broken links", h.broken_links.count, "Internal links to 4xx/5xx/failed", true)}
+      ${tile("Redirects", h.redirected_links.count, "Internal links that hit a 3xx", true)}
+      ${tile("Dead ends", h.dead_ends.count, "No outlinks in main content", true)}
+      ${tile("Non-indexable", h.non_indexable.count, "noindex or canonical elsewhere")}
+      ${tile("Depth > 3", h.deep_pages.count, "Clicks from the homepage", true)}
+    </div>
+    <div class="grid two">
+      <div class="card"><h2>Pages by section</h2><table class="sortable"><tr><th${tip("sect|Section")}>Section</th><th class="num"${tip("sect|Pages")}>Pages</th><th class="num"${tip("sect|200 OK")}>200 OK</th></tr>
+        ${h.sections.map(s => `<tr><td>${esc(s.section)}</td><td class="num">${fmt(s.pages)}</td><td class="num">${fmt(s.ok)}</td></tr>`).join("")}</table></div>
+      <div class="card"><h2>Click depth</h2><table><tr><th${tip("depth|Depth")}>Depth</th><th class="num">Pages</th><th style="width:55%"></th></tr>
+        ${h.depth_histogram.map(d => `<tr><td>${d.depth ?? "not linked"}</td><td class="num">${fmt(d.pages)}</td>
+          <td><div class="bar" style="width:${d.pages / maxDepth * 100}%"></div></td></tr>`).join("")}</table>
+        <div class="note">"Not linked" pages are in the sitemap but no crawled page links to them.</div></div>
+    </div>
+    ${issue("Orphan pages", h.orphans, "In the sitemap but no other page links to them.", pageTable)}
+    ${issue("Contextual orphans", h.contextual_orphans, "No link from main content or body, only from nav, header, footer or aside (or none).", pageTable)}
+    ${issue("Broken internal links", h.broken_links, "", linkTable)}
+    ${issue("Redirected internal links", h.redirected_links, "Link straight to the final URL instead.", linkTable)}
+    ${issue("Dead ends", h.dead_ends, "200 pages with no internal link in main content.", pageTable)}
+    ${issue("Non-indexable pages", h.non_indexable, "", pageTable)}
+    ${issue("Missing titles", h.missing_title, "", pageTable)}
+    ${issue("Duplicate titles", h.duplicate_titles, "", pageTable)}
+    ${issue("Missing H1", h.missing_h1, "", pageTable)}
+    ${issue("Missing meta description", h.missing_description, "", pageTable)}
+    ${issue("Pages deeper than 3 clicks", h.deep_pages, "", pageTable)}`;
+}
+
+function issue(title, b, note, render) {
+  return `<details ${b.count && b.count <= 50 ? "open" : ""}><summary>${title} <span class="sub">${fmt(b.count)}${b.count > b.rows.length ? ` (showing ${b.rows.length})` : ""}</span></summary>
+    <div class="card">${note ? `<div class="note" style="margin:0 0 8px">${note}</div>` : ""}
+    ${b.count ? `<div class="scroll">${render(b.rows)}</div>` : `<div class="sub good">None.</div>`}</div></details>`;
+}
+function pageTable(rows) {
+  const k = rows[0] || {};
+  return `<table class="sortable"><tr><th>Page</th><th>Title</th>${"reason" in k ? `<th${tip("iss|Reason")}>Reason</th>` : ""}${"depth" in k ? `<th class="num"${tip("iss|Depth")}>Depth</th>` : ""}${"count" in k ? `<th class="num"${tip("iss|Pages with title")}>Pages with title</th>` : ""}${"inlinks" in k ? `<th class="num"${tip("iss|Inlinks")}>Inlinks</th>` : ""}</tr>
+    ${rows.map(r => `<tr><td class="wrap">${link(r.url)}</td><td>${esc(r.title)}</td>${"reason" in k ? `<td>${esc(r.reason)}${r.canonical ? ` → ${link(r.canonical)}` : ""}</td>` : ""}${"depth" in k ? `<td class="num">${r.depth}</td>` : ""}${"count" in k ? `<td class="num">${r.count}</td>` : ""}${"inlinks" in k ? `<td class="num">${r.inlinks}</td>` : ""}</tr>`).join("")}</table>`;
+}
+function linkTable(rows) {
+  const red = rows[0] && "redirect_to" in rows[0];
+  return `<table class="sortable"><tr><th${tip("lnk|From")}>From</th><th${tip("lnk|To")}>To</th><th${tip("lnk|Anchor")}>Anchor</th><th class="num"${tip("lnk|Status")}>Status</th>${red ? `<th${tip("lnk|Redirects to")}>Redirects to</th>` : ""}</tr>
+    ${rows.map(r => `<tr><td class="wrap">${link(r.src)}</td><td class="wrap">${link(r.dst)}</td><td>${esc(r.anchor)}</td><td class="num">${r.status ?? "error"}</td>${red ? `<td class="wrap">${link(r.redirect_to)}</td>` : ""}</tr>`).join("")}</table>`;
+}
+
+$("#f").onsubmit = async e => {
+  e.preventDefault();
+  $("#go").disabled = true;
+  const res = await fetch("api/crawl?domain=" + encodeURIComponent($("#domain").value), { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) { $("#go").disabled = false; $("#app").innerHTML = `<div class="err">${esc(data.detail || res.statusText)}</div>`; return; }
+  history.pushState(null, "", "?crawl=" + data.id);
+  watch(data.id);
+};
+
+function route() {
+  const id = new URLSearchParams(location.search).get("crawl");
+  if (id) watch(id); else { clearInterval(timer); $("#go").disabled = false; home(); }
+}
+window.onpopstate = route;
+route();
+
+document.addEventListener("click", e => {
+  const th = e.target.closest("table.sortable th");
+  if (!th) return;
+  const table = th.closest("table"), i = th.cellIndex, num = th.classList.contains("num");
+  const dir = th.dataset.dir ? (th.dataset.dir === "asc" ? "desc" : "asc") : (num ? "desc" : "asc");
+  table.querySelectorAll("th").forEach(h => delete h.dataset.dir);
+  th.dataset.dir = dir;
+  const key = tr => {
+    const t = tr.cells[i]?.textContent.trim() || "";
+    if (!num) return t.toLowerCase();
+    const m = t.replace(/,/g, "").match(/^-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+  };
+  const rows = [...table.rows].slice(1);
+  rows.sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x === y) return 0;
+    if (x === null || x === "") return 1;
+    if (y === null || y === "") return -1;
+    const c = num ? x - y : x.localeCompare(y);
+    return dir === "asc" ? c : -c;
+  });
+  rows.forEach(r => r.parentNode.appendChild(r));
+});
+</script>
+</body>
+</html>
