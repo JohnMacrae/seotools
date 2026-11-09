@@ -12,13 +12,25 @@ MIN_IMPRESSIONS = 10
 WINDOW_DAYS = 28
 DECAY_PCT = 0.30
 DECAY_MIN_CLICKS = 5
+LOW_CTR_POS_MAX = 8  # exclusive
+LOW_CTR_MIN_IMPRESSIONS = 100
+LOW_CTR_RATIO = 0.5
+EXPECTED_CTR = {1: .28, 2: .15, 3: .10, 4: .07, 5: .05, 6: .04, 7: .03}
+BRAND_TERMS = ("serenity",)
 
 YEAR_SHIFT_DAYS = 364  # 52 weeks, so the year-ago window has the same weekdays as the current one
 
 
 def thresholds() -> dict:
     return {"pos_min": POS_MIN, "pos_max": POS_MAX, "min_impressions": MIN_IMPRESSIONS, "window_days": WINDOW_DAYS,
-            "decay_pct": DECAY_PCT, "decay_min_clicks": DECAY_MIN_CLICKS}
+            "decay_pct": DECAY_PCT, "decay_min_clicks": DECAY_MIN_CLICKS,
+            "low_ctr_pos_max": LOW_CTR_POS_MAX, "low_ctr_min_impressions": LOW_CTR_MIN_IMPRESSIONS,
+            "low_ctr_ratio": LOW_CTR_RATIO, "expected_ctr": EXPECTED_CTR, "brand_terms": list(BRAND_TERMS)}
+
+
+def _tag(row: dict, targets_by_page: dict[str, list[str]]) -> str:
+    kws = targets_by_page.get(row["page"]) or []
+    return "on-target" if any(match.contains_variant(row["query"], kw) for kw in kws) else "off-target"
 
 
 def page2(rows: list[dict], targets_by_page: dict[str, list[str]]) -> list[dict]:
@@ -28,17 +40,44 @@ def page2(rows: list[dict], targets_by_page: dict[str, list[str]]) -> list[dict]
     for r in rows:
         if not (POS_MIN <= r["position"] <= POS_MAX and r["impressions"] >= MIN_IMPRESSIONS):
             continue
-        kws = targets_by_page.get(r["page"]) or []
-        on = any(match.contains_variant(r["query"], kw) for kw in kws)
         by_page.setdefault(r["page"], []).append({
             "query": r["query"], "impressions": r["impressions"], "clicks": r["clicks"],
-            "position": r["position"], "tag": "on-target" if on else "off-target"})
+            "position": r["position"], "tag": _tag(r, targets_by_page)})
     out = []
     for page, qs in by_page.items():
         qs.sort(key=lambda q: -q["impressions"])
         out.append({"page": page, "impressions": sum(q["impressions"] for q in qs),
                     "clicks": sum(q["clicks"] for q in qs), "queries": qs})
     out.sort(key=lambda p: -p["impressions"])
+    return out
+
+
+def low_ctr(rows: list[dict], targets_by_page: dict[str, list[str]]) -> list[dict]:
+    """Page-1 queries whose CTR is under LOW_CTR_RATIO x the expected CTR for their rounded position.
+    Returns [{page, impressions, clicks, missed, queries: [{query, impressions, clicks, ctr, expected_ctr,
+    position, missed, tag}]}], biggest summed clicks missed first."""
+    by_page: dict[str, list[dict]] = {}
+    for r in rows:
+        imp = r["impressions"]
+        if not (r["position"] < LOW_CTR_POS_MAX and imp >= LOW_CTR_MIN_IMPRESSIONS):
+            continue
+        ql = r["query"].lower()
+        if any(b in ql for b in BRAND_TERMS):
+            continue
+        # positions in [7.5, 8) round to 8, which has no table entry: clamp to the last one
+        expected = EXPECTED_CTR[min(max(EXPECTED_CTR), max(1, round(r["position"])))]
+        ctr = r["clicks"] / imp
+        if not ctr < LOW_CTR_RATIO * expected:
+            continue
+        by_page.setdefault(r["page"], []).append({
+            "query": r["query"], "impressions": imp, "clicks": r["clicks"], "ctr": ctr, "expected_ctr": expected,
+            "position": r["position"], "missed": expected * imp - r["clicks"], "tag": _tag(r, targets_by_page)})
+    out = []
+    for page, qs in by_page.items():
+        qs.sort(key=lambda q: -q["missed"])
+        out.append({"page": page, "impressions": sum(q["impressions"] for q in qs),
+                    "clicks": sum(q["clicks"] for q in qs), "missed": sum(q["missed"] for q in qs), "queries": qs})
+    out.sort(key=lambda p: -p["missed"])
     return out
 
 

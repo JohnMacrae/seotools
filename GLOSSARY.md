@@ -93,5 +93,8 @@ A page whose clicks in the last 28 data days fell by at least 30% and at least 5
 **Digest**:
 Weekly review page (UI only) built from Search Console data only; no paid calls.
 
+**Low-CTR query**:
+A non-brand query on page 1 (average position below 8) with at least 100 impressions whose click-through rate over the last 28 data days is under half the expected CTR for its position (1→28%, 2→15%, 3→10%, 4→7%, 5→5%, 6→4%, 7→3%); clicks missed = expected clicks − actual clicks. Review signal only.
+
 **Page-2 query**:
 A query with average position 8–20 over the last 28 data days and at least 10 impressions; tagged on-target when it is a close variant of the page's keyword target, else off-target (review signal only).

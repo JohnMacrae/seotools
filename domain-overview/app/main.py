@@ -427,7 +427,7 @@ def api_digest(refresh: bool = False):
                 tbp.setdefault(page, []).extend(kws)
     end = dt.date.fromisoformat(d["page2_end"])
     return {"data_dates": {"page2": {"start": d["page2_start"], "end": d["page2_end"]}, "decay": digest.decay_dates(end)},
-            "page2": digest.page2(d["rows"], tbp), "decaying": digest.decay(d["daily"], end),
+            "page2": digest.page2(d["rows"], tbp), "low_ctr": digest.low_ctr(d["rows"], tbp), "decaying": digest.decay(d["daily"], end),
             "thresholds": digest.thresholds(), "fetched_at": d["fetched_at"]}
 
 

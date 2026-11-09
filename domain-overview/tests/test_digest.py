@@ -110,3 +110,60 @@ def test_decay_sorted_by_loss_and_dates():
     assert [p["page"] for p in digest.decay(rows, END)] == [big, small]
     d = digest.decay_dates(END)
     assert d["current"]["end"] == "2026-11-06" and set(d) == {"current", "previous", "year_ago"}
+
+
+def lc(rows, tbp=None):
+    return digest.low_ctr(rows, tbp or {})
+
+
+def names(res):
+    return [x["query"] for p in res for x in p["queries"]]
+
+
+def test_low_ctr_position_boundary():
+    rows = [q("a", 7.9, imp=1000, clicks=0), q("b", 8.0, imp=1000, clicks=0)]
+    assert names(lc(rows)) == ["a"]
+
+
+def test_low_ctr_impression_boundary():
+    rows = [q("a", 3, imp=99, clicks=0), q("b", 3, imp=100, clicks=0)]
+    assert names(lc(rows)) == ["b"]
+
+
+def test_low_ctr_ratio_boundary():
+    # position 2 -> expected .15, threshold .075; 100 impressions
+    rows = [q("below", 2, imp=1000, clicks=74), q("at", 2, imp=1000, clicks=75)]
+    assert names(lc(rows)) == ["below"]
+
+
+def test_low_ctr_brand_excluded_case_insensitive():
+    rows = [q("Serenity Brides colchester", 1, imp=1000, clicks=0), q("bustle", 1, imp=1000, clicks=0)]
+    assert names(lc(rows)) == ["bustle"]
+
+
+def test_low_ctr_rounding_extremes_use_position_1_expected():
+    res = lc([q("a", 1.4, imp=1000, clicks=0), q("b", 0.4, imp=1000, clicks=0)])
+    assert [x["expected_ctr"] for x in res[0]["queries"]] == [.28, .28]
+
+
+def test_low_ctr_position_7_9_uses_last_table_entry():
+    res = lc([q("a", 7.9, imp=1000, clicks=0)])
+    assert res[0]["queries"][0]["expected_ctr"] == .03
+
+
+def test_low_ctr_sorted_by_missed_and_shape():
+    rows = [q("small", 7, imp=200, clicks=0), q("big", 1, imp=1000, clicks=10),
+            q("other", 5, imp=500, clicks=0, page="https://x.test/b")]
+    res = lc(rows)
+    assert [p["page"] for p in res] == [P, "https://x.test/b"]  # 270 vs 25 missed
+    p = res[0]
+    assert [x["query"] for x in p["queries"]] == ["big", "small"]
+    assert p["queries"][0]["missed"] == 270 and p["missed"] == 276
+    assert p["impressions"] == 1200 and p["clicks"] == 10
+    assert set(p["queries"][0]) == {"query", "impressions", "clicks", "ctr", "expected_ctr", "position", "missed", "tag"}
+
+
+def test_low_ctr_tags():
+    rows = [q("short wedding dresses", 2, imp=500, clicks=0), q("prom dress", 2, imp=400, clicks=0)]
+    res = lc(rows, {P: ["short wedding dresses"]})
+    assert {x["query"]: x["tag"] for x in res[0]["queries"]} == {"short wedding dresses": "on-target", "prom dress": "off-target"}
