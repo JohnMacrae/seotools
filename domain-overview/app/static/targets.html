@@ -64,6 +64,7 @@
     <div class="sub" id="vol"></div>
   </div>
 </main>
+<script src="spendlight.js"></script>
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let rows = [], editing = null;
@@ -223,6 +224,7 @@ function pollSup(id) {
     supTimer = null;
     LM = await api("GET", "/api/linkmap?crawl=" + LM.crawl_id);
     renderLM();
+    if (window.spendLights) window.spendLights.refresh();
   }), 2000);
 }
 function renderLM() {
@@ -232,7 +234,7 @@ function renderLM() {
   el.innerHTML = `<div class="strip">${stat(s.targets, "targets")}${stat(s.needs_links, "need links")}${stat(s.conflicts, "with conflicts")}
     ${stat(s.no_supporting, "no supporting pages")}${stat(s.wrong_page, "wrong page")}${stat(noPlan ? "no plan" : `${c.done}/${d.plan_total}`, "plan done")}</div>
     <p class="sub">Crawl ${esc(d.crawl_id)} &middot; plan ${esc(d.plan_id ?? "none")} (checked on crawl ${esc(d.checked_crawl_id ?? "n/a")}) &middot; Search Console ${d.gsc ? esc(d.gsc.start_date) + " to " + esc(d.gsc.end_date) : "not fetched"}</p>
-    <div class="bar"><button id="runsup"${supBusy() ? " disabled" : ""}>Run supporting-page review</button>
+    <div class="bar"><button id="runsup"${supBusy() ? " disabled" : ""}>Run supporting-page review</button> <span class="spend-light" data-feature="supporting"${LM.supporting_run && LM.supporting_run.status === "done" && LM.supporting_run.finished_at ? ` data-ts="${esc(LM.supporting_run.finished_at)}" data-cost="${LM.supporting_run.cost || 0}"` : ""}></span>
       <span class="sub" id="supmsg">${esc(supStatus())}</span></div>
     ${d.entries.map(card).join("")}
     <div class="card"><details><summary>Other links (${d.other_links.length}): planned links to pages that are not target pages</summary>

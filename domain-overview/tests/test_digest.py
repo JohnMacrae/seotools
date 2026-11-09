@@ -251,3 +251,11 @@ def test_fetch_volumes_cache_ttl_and_cost(monkeypatch):
     assert r3 == {"fetched": 2, "cached": 1, "cost": 0.08}
     assert calls[1][1]["keywords"] == ["b", "c"]
     assert con.execute("SELECT COUNT(*) FROM volume_runs").fetchone()[0] == 2
+
+
+def test_ads_keyword_cleaning():
+    assert digest._ads_keyword("how long does it take to get a wedding dress?") == "how long does it take to get a wedding dress"
+    assert digest._ads_keyword("mother's day & more") == "mother's day & more"
+    assert digest._ads_keyword("???") is None
+    assert digest._ads_keyword(" ".join(["word"] * 11)) is None
+    assert digest._ads_keyword("x" * 81) is None

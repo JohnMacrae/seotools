@@ -72,7 +72,7 @@
       <option value="2036">Australia</option>
       <option value="2124">Canada</option>
     </select>
-    <button id="go">Analyse</button>
+    <button id="go">Analyse</button> <span class="spend-light" data-feature="overview"></span>
   </form>
 </header>
 
@@ -80,6 +80,7 @@
   <div class="card"><div class="empty" id="landing">Loading…</div></div>
 </main>
 
+<script src="spendlight.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
@@ -124,6 +125,7 @@ async function load(domain, loc, opts = {}) {
     if (!res.ok) throw new Error(data.detail || res.statusText);
     const hist = await fetch(`api/history?domain=${encodeURIComponent(data.domain)}&location=${loc}`).then(r => r.json());
     state = data; render(data, hist);
+    if (window.spendLights) window.spendLights.refresh();
   } catch (e) {
     $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`;
   } finally { btn.disabled = false; btn.textContent = "Analyse"; }
@@ -141,6 +143,7 @@ function render(d, hist) {
       <span>Snapshot <select id="snap">${snapOpts}</select></span>
       <span>${d.cached ? "from cache" : "fresh"} · cost $${(d.cost || 0).toFixed(3)}</span>
       <button class="ghost" id="refresh" style="padding:4px 10px;font-size:12px">Refresh (paid)</button>
+      <span class="spend-light" data-feature="overview" data-ts="${esc(d.fetched_at || "")}" data-cost="${d.cost || 0}"></span>
       <a href="./">All lookups</a>
     </div>
 

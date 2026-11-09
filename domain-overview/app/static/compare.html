@@ -82,12 +82,13 @@
       <option value="2826">UK</option><option value="2840">US</option><option value="2372">Ireland</option>
       <option value="2036">Australia</option><option value="2124">Canada</option>
     </select>
-    <button id="go">Compare</button>
+    <button id="go">Compare</button> <span class="spend-light" data-feature="compare"></span>
   </form>
   <div class="chips" id="chips"></div>
 </header>
 <main id="app"></main>
 
+<script src="spendlight.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
@@ -149,6 +150,7 @@ async function run(q) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || res.statusText);
     S = data; render();
+    if (window.spendLights) window.spendLights.refresh();
   } catch (e) { $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   finally { btn.disabled = false; btn.textContent = "Compare"; }
 }
@@ -161,7 +163,8 @@ function render() {
     ${S.errors?.length ? `<div class="err">Some data failed: ${esc(S.errors.join("; "))}</div>` : ""}
     <div class="card">
       <h2>Verdict <small>${S.cached ? "from cache" : "fresh"} · ${S.fetched_at.replace("T", " ")} · cost $${(S.cost || 0).toFixed(3)}
-        <button class="ghost" id="refresh">Refresh (paid)</button></small></h2>
+        <button class="ghost" id="refresh">Refresh (paid)</button>
+        <span class="spend-light" data-feature="compare" data-ts="${esc(S.fetched_at || "")}" data-cost="${S.cost || 0}"></span></small></h2>
       <p class="headline">${esc(v.headline || "Not enough shared data to judge.")}</p>
       ${v.losing_keywords ? `<div class="split">
         ${v.onpage_share ? `<div style="background:var(--on);width:${v.onpage_share}%">On-page ${v.onpage_share}%</div>` : ""}

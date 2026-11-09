@@ -60,7 +60,9 @@ docker compose up -d --build
 ```
 
 Open http://dnas:8095 (or over Tailscale at http://100.98.167.107:8095).
-Pages: `/` overview, `/compare`, `/linking`, `/targets`, `/mappack`, `/digest` (weekly review: page-2 queries, low-CTR page-1 queries and decaying pages from Search Console; page groups collapse, columns sort on header click; Refresh re-fetches) (source in `app/static/*.html`). `/targets` → **Link map** tab shows each keyword target's contextual, planned and template links with flags (`GET /api/linkmap[?crawl=ID]`). Each card also has an **On-page** line: the primary keyword (close variant, up to 2 extra words between its words) in the title, URL path (wedding/dress/bridal count as covered; home page not checked), H1 and first sentence of the body copy; misses add a `keyword missing: …` flag. Line hubs (`/collections/<line>`) never get `not in plan`. After `up -d --build`, wait for the container to answer before checking pages.
+Pages: `/` overview, `/compare`, `/linking`, `/targets`, `/mappack`, `/digest` (weekly review: page-2 queries, low-CTR page-1 queries and decaying pages from Search Console; page groups collapse, columns sort on header click; By page / Top opportunities view (all queries by clicks lost); All / Booking / Sales intent filter; Fetch volumes (paid, DataForSEO search volume, cached 30 days, only new or stale queries requested); Refresh re-fetches) (source in `app/static/*.html`). `/targets` → **Link map** tab shows each keyword target's contextual, planned and template links with flags (`GET /api/linkmap[?crawl=ID]`). Each card also has an **On-page** line: the primary keyword (close variant, up to 2 extra words between its words) in the title, URL path (wedding/dress/bridal count as covered; home page not checked), H1 and first sentence of the body copy; misses add a `keyword missing: …` flag. Line hubs (`/collections/<line>`) never get `not in plan`. After `up -d --build`, wait for the container to answer before checking pages.
+
+Spend lights: every paid control (overview Analyse/Refresh, competitor gap Compare/Refresh, Find page gaps, Build link plan, supporting-page review, map pack Run check now, digest Fetch volumes) shows a dot and its last refresh date: green when the data is 30 days old or less, red when older, grey when never run (`STALE_DAYS` in `app/spend.py`).
 To put it behind the Pi's Caddy, add a site block that reverse-proxies to `100.98.167.107:8095`.
 
 Try it without credits first: set `DFS_MOCK=1` in `.env` and restart.
@@ -78,6 +80,8 @@ next to the snapshot and the running total is on the home page.
 - `GET /api/recent`
 - `POST /api/crawl?domain=example.com` (409 if one is running), `GET /api/crawl/ID`, `GET /api/crawls?domain=`, `GET /api/crawl/ID/health`
 - `GET /api/digest[?refresh=1]` (JSON backing the `/digest` page)
+- `POST /api/digest/volumes` (paid: fetch search volume for digest queries not cached in the last 30 days)
+- `GET /api/spend-status` (last refresh date, last cost, total cost and green/red/never status per paid feature)
 - `GET /healthz`
 
 Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.

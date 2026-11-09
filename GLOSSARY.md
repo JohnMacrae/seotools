@@ -87,14 +87,20 @@ _Avoid_: link plan (the plan is the list of proposed links; the map is the whole
 
 ## Reviews
 
+**Clicks lost**: estimated clicks a query is missing in the last 28 data days. Low-CTR query: impressions × expected CTR for its position − clicks. Page-2 query: impressions × 5% (position-5 CTR) − clicks, floored at 0. An estimate for ranking opportunities, not a measured figure.
+
 **Decaying page**:
 A page whose clicks in the last 28 data days fell by at least 30% and at least 5 clicks against either the previous 28 days or the same 28 days a year earlier (364 days back). "No data" when Search Console has no rows for that window (the property's data starts 2026-09-13).
 
 **Digest**:
-Weekly review page (UI only) built from Search Console data only; no paid calls.
+Weekly review page (UI only) built from Search Console data; the only paid call is the optional Fetch volumes button (search volume, cached 30 days).
+
+**Intent (booking / sales)**: a digest query's intent from whole-word term lists in `app/digest.py` (`INTENT_TERMS`): booking = book, booking, appointment, near me, shop, shops, store, boutique, colchester, essex, visit, opening; sales = buy, price, prices, cost, sale, sales, cheap, affordable, under, discount, outlet, sample. A query can have both or neither.
 
 **Low-CTR query**:
 A non-brand query on page 1 (average position below 8) with at least 100 impressions whose click-through rate over the last 28 data days is under half the expected CTR for its position (1→28%, 2→15%, 3→10%, 4→7%, 5→5%, 6→4%, 7→3%); clicks lost = expected clicks (impressions × expected CTR) − actual clicks, an estimate. Review signal only.
 
 **Page-2 query**:
 A query with average position 8–20 over the last 28 data days and at least 10 impressions; tagged on-target when it is a close variant of the page's keyword target, else off-target (review signal only).
+
+**Spend light**: the green/red/grey dot and last refresh date beside every paid control; red when the data is more than 30 days old.

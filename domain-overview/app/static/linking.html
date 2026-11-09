@@ -77,6 +77,7 @@
 </header>
 <main id="app"></main>
 
+<script src="spendlight.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-GB");
@@ -271,7 +272,7 @@ async function pollPlan() {
     const r = await fetch("api/plan/" + cur.planId);
     if (!r.ok) { clearInterval(planTimer); return; }
     cur.plan = await r.json();
-    if (cur.plan.status !== "running") { clearInterval(planTimer); cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json()); }
+    if (cur.plan.status !== "running") { clearInterval(planTimer); if (window.spendLights) window.spendLights.refresh(); cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json()); }
     if (PLAN_TABS.includes(cur.tab)) renderPlanTab();
     return cur.plan.status;
   };
@@ -287,10 +288,14 @@ async function buildPlan() {
   pollPlan();
 }
 
+function slight(feature, r) {
+  const ts = r && r.status === "done" ? (r.finished_at || r.created_at) : "";
+  return `<span class="spend-light" data-feature="${feature}"${ts ? ` data-ts="${esc(ts)}" data-cost="${r.cost || 0}"` : ""}></span>`;
+}
 function planHeader() {
   const p = cur.plan, running = p && p.status === "running";
   const picker = cur.plans.length > 1 ? `<select id="planpick">${cur.plans.map(x => `<option value="${x.id}" ${x.id === cur.planId ? "selected" : ""}>#${x.id} · ${esc(x.created_at.replace("T", " "))} · ${esc(x.status)}</option>`).join("")}</select>` : "";
-  let h = `<div class="planbar"><button id="buildplan" ${running ? "disabled" : ""}>Build link plan</button>${picker}
+  let h = `<div class="planbar"><button id="buildplan" ${running ? "disabled" : ""}>Build link plan</button>${slight("plans", p)}${picker}
     ${running ? `<span class="sub">${esc(p.progress || "Working…")}</span>` : ""}</div>`;
   if (!p) return h + `<div class="sub">No link plan for this crawl yet. Click "Build link plan".</div>`;
   if (p.status === "error") return h + `<div class="err">Plan failed: ${esc(p.error)}</div>`;
@@ -402,7 +407,7 @@ async function pollGaps() {
     const r = await fetch("api/gaps/" + cur.gapId);
     if (!r.ok) { clearInterval(gapTimer); return; }
     cur.gap = await r.json();
-    if (cur.gap.status !== "running") { clearInterval(gapTimer); cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json()); }
+    if (cur.gap.status !== "running") { clearInterval(gapTimer); if (window.spendLights) window.spendLights.refresh(); cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json()); }
     if (cur.tab === "Pages to build") renderGaps();
     return cur.gap.status;
   };
@@ -432,7 +437,7 @@ function gapRows(d) {
 function renderGaps() {
   const g = cur.gap, running = g && g.status === "running";
   const picker = (cur.gaps || []).length > 1 ? `<select id="gappick">${cur.gaps.map(x => `<option value="${x.id}" ${x.id === cur.gapId ? "selected" : ""}>#${x.id} · ${esc(x.created_at.replace("T", " "))} · ${esc(x.status)}</option>`).join("")}</select>` : "";
-  let h = `<div class="planbar"><button id="findgaps" ${running ? "disabled" : ""}>Find page gaps</button>${picker}
+  let h = `<div class="planbar"><button id="findgaps" ${running ? "disabled" : ""}>Find page gaps</button>${slight("gaps", g)}${picker}
     ${running ? `<span class="sub">${esc(g.progress || "Working…")}</span>` : ""}</div>`;
   if (!g) { $("#tab").innerHTML = h + `<div class="sub">No page-gap run for this crawl yet. Click "Find page gaps". This only recommends pages; nothing is created on the site.</div>`; return; }
   if (g.status === "error") { $("#tab").innerHTML = h + `<div class="err">Gap run failed: ${esc(g.error)}</div>`; return; }

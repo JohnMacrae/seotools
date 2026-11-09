@@ -182,6 +182,12 @@ def digest_queries(page2_groups: list[dict], low_ctr_groups: list[dict]) -> list
     return [q["query"] for g in (*page2_groups, *low_ctr_groups) for q in g["queries"]]
 
 
+def _ads_keyword(q: str) -> str | None:
+    """Google Ads search_volume rejects symbols (e.g. '?') and keywords over 80 chars or 10 words."""
+    k = " ".join(re.sub(r"[^\w\s'&-]", " ", q).split())
+    return k if k and len(k) <= 80 and len(k.split()) <= 10 else None
+
+
 async def fetch_volumes(con, queries: list[str], now: dt.datetime | None = None) -> dict:
     """Fetch search volume for queries missing from query_volumes or older than VOLUME_TTL_DAYS.
     Returns {fetched, cached, cost}; makes no DFS call (and writes no run row) when nothing is needed."""
@@ -201,15 +207,20 @@ async def fetch_volumes(con, queries: list[str], now: dt.datetime | None = None)
         async with dfs.client() as c:
             for i in range(0, len(todo), VOLUME_CHUNK):
                 chunk = todo[i:i + VOLUME_CHUNK]
-                items, cost = await dfs.post_path(
-                    c, DFS_VOLUME_PATH,
-                    {"keywords": chunk, "location_code": DFS_LOCATION, "language_code": DFS_LANGUAGE},
-                    mock_name="search_volume", all_results=True)
-                total += cost
-                got = {(it.get("keyword") or "").lower(): it.get("search_volume") for it in (items or [])}
+                clean = {q: _ads_keyword(q) for q in chunk}
+                send = list(dict.fromkeys(k for k in clean.values() if k))
+                got: dict = {}
+                if send:
+                    items, cost = await dfs.post_path(
+                        c, DFS_VOLUME_PATH,
+                        {"keywords": send, "location_code": DFS_LOCATION, "language_code": DFS_LANGUAGE},
+                        mock_name="search_volume", all_results=True)
+                    total += cost
+                    got = {(it.get("keyword") or "").lower(): it.get("search_volume") for it in (items or [])}
+                # queries Google Ads can't take are stored as NULL so they aren't re-sent until the TTL passes
                 con.executemany(
                     "INSERT OR REPLACE INTO query_volumes(query, volume, fetched_at, run_id) VALUES (?,?,?,?)",
-                    [(q, got.get(q), stamp, run_id) for q in chunk])
+                    [(q, got.get(clean[q]) if clean[q] else None, stamp, run_id) for q in chunk])
                 con.execute("UPDATE volume_runs SET cost=? WHERE id=?", (total, run_id))
                 con.commit()
     except Exception:

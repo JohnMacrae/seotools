@@ -60,12 +60,16 @@
 </header>
 <main>
   <div id="err"></div>
-  <div class="bar"><button id="refresh">Refresh</button><span class="sub" id="hdr"></span></div>
+  <div class="bar"><button id="refresh">Refresh</button><button id="fetchvol" class="ghost">Fetch volumes (paid)</button><span class="spend-light" data-feature="volumes"></span><span class="sub" id="volmsg"></span><span class="sub" id="hdr"></span></div>
   <div class="sub" style="margin-bottom:14px">All dates are Search Console data dates (the last few days are not yet available).</div>
-  <div class="card"><h2>Page-2 queries</h2><div class="sub" id="p2intro"></div><div id="p2"></div></div>
-  <div class="card"><h2>Low CTR on page 1</h2><div class="sub" id="lcintro"></div><div id="lc"></div></div>
+  <div class="bar"><div class="tabs" id="views" style="margin:0"><button data-view="page">By page</button><button data-view="top">Top opportunities</button></div>
+    <div class="tabs" id="ifilt" style="margin:0"><button data-intent="all">All</button><button data-intent="booking">Booking</button><button data-intent="sales">Sales</button></div></div>
+  <div class="card" id="topcard" hidden><h2>Top opportunities</h2><div class="sub">All page-2 and low-CTR queries, biggest estimated clicks lost first.</div><div id="top"></div></div>
+  <div class="card" id="p2card"><h2>Page-2 queries</h2><div class="sub" id="p2intro"></div><div id="p2"></div></div>
+  <div class="card" id="lccard"><h2>Low CTR on page 1</h2><div class="sub" id="lcintro"></div><div id="lc"></div></div>
   <div class="card"><h2>Decaying pages</h2><div class="sub" id="dcintro"></div><div id="dc"></div></div>
 </main>
+<script src="spendlight.js"></script>
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const $ = id => document.getElementById(id);
@@ -78,21 +82,53 @@ function cmp(c) {
   const pct = c.pct == null ? "n/a" : (c.pct > 0 ? "+" : "") + (c.pct * 100).toFixed(0) + "%";
   return `${num(c.clicks)} <span class="${c.delta < 0 ? "neg" : ""}">(${sgn(c.delta)}, ${pct})</span>`;
 }
-function render(d) {
-  const dd = d.data_dates, t = d.thresholds;
-  $("hdr").innerHTML = `Page-2 window ${rng(dd.page2)} · Decay: current ${rng(dd.decay.current)}, previous ${rng(dd.decay.previous)}, year ago ${rng(dd.decay.year_ago)} · fetched ${esc(d.fetched_at)}`;
+let D = null;
+const store = (k, v) => { try { if (v === undefined) return localStorage.getItem("digest." + k); localStorage.setItem("digest." + k, v); } catch { return null; } };
+let view = store("view") === "top" ? "top" : "page";
+let ifilt = ["booking", "sales"].includes(store("intent")) ? store("intent") : "all";
+const vol = v => v == null ? "—" : num(v);
+const iBadges = q => (q.intent || []).map(i => `<span class="badge off">${esc(i)}</span>`).join(" ");
+const tagB = q => `<span class="badge ${q.tag === "on-target" ? "on" : "off"}">${esc(q.tag)}</span>`;
+const keep = q => ifilt === "all" || (q.intent || []).includes(ifilt);
+const lostTip = "Estimate: impressions × typical CTR for the position − actual clicks";
+// Filter a list of page groups: keep matching queries, drop empty groups, recompute group totals.
+function filt(groups) {
+  return (groups || []).map(g => {
+    const qs = g.queries.filter(keep);
+    return {...g, queries: qs, impressions: qs.reduce((a, q) => a + q.impressions, 0), missed: qs.reduce((a, q) => a + (q.missed || 0), 0)};
+  }).filter(g => g.queries.length);
+}
+const summ = g => `<summary><b>${esc(path(g.page))}</b> <span class="sub">${num(g.missed)} clicks lost · ${g.queries.length} queries · ${g.queries.filter(q => q.tag === "on-target").length} on-target</span></summary>`;
+function render(d) { D = d; draw(); }
+function draw() {
+  const d = D; if (!d) return;
+  const dd = d.data_dates, t = d.thresholds, v = d.volumes || {};
+  const vtxt = v.fetched_at ? `volumes fetched ${esc(String(v.fetched_at).slice(0, 10))} (${num(v.count || 0)} cached)` : "volumes not fetched";
+  $("hdr").innerHTML = `Page-2 window ${rng(dd.page2)} · Decay: current ${rng(dd.decay.current)}, previous ${rng(dd.decay.previous)}, year ago ${rng(dd.decay.year_ago)} · fetched ${esc(d.fetched_at)} · ${vtxt}`;
+  document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.view === view));
+  document.querySelectorAll("#ifilt button").forEach(b => b.classList.toggle("on", b.dataset.intent === ifilt));
+  const top = view === "top";
+  $("p2card").hidden = top; $("lccard").hidden = top; $("topcard").hidden = !top;
+  const p2 = filt(d.page2), lc = filt(d.low_ctr);
+  const none = ifilt === "all" ? "" : ` with ${ifilt} intent`;
   $("p2intro").textContent = `Queries just off page 1: average position ${t.pos_min} to ${t.pos_max} with at least ${t.min_impressions} impressions, over ${t.window_days} days. Click a page to expand.`;
-  $("p2").innerHTML = d.page2.length ? d.page2.map(g => `<details><summary><b>${esc(path(g.page))}</b> <span class="sub">${num(g.impressions)} impressions · ${g.queries.length} queries · ${g.queries.filter(q => q.tag === "on-target").length} on-target</span></summary>
-    <table class="sortable"><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">Position</th><th>Tag</th></tr>${g.queries.map(q =>
-    `<tr><td>${esc(q.query)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${q.position.toFixed(1)}</td><td><span class="badge ${q.tag === "on-target" ? "on" : "off"}">${esc(q.tag)}</span></td></tr>`).join("")}</table></details>`).join("")
-    : '<div class="sub">No page-2 queries meet the thresholds.</div>';
-  const lc = d.low_ctr || [];
+  $("p2").innerHTML = p2.length ? p2.map(g => `<details>${summ(g)}
+    <table class="sortable"><tr><th>Query</th><th class="n">Volume</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">Position</th><th class="n" title="${lostTip}">Clicks lost</th><th>Intent</th><th>Tag</th></tr>${g.queries.map(q =>
+    `<tr><td>${esc(q.query)}</td><td class="n">${vol(q.volume)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${q.position.toFixed(1)}</td><td class="n">${num(q.missed || 0)}</td><td>${iBadges(q)}</td><td>${tagB(q)}</td></tr>`).join("")}</table></details>`).join("")
+    : `<div class="sub">No page-2 queries${none} meet the thresholds.</div>`;
   const brands = (t.brand_terms || []).join(", ");
   $("lcintro").textContent = `Queries at position below ${t.low_ctr_pos_max} with at least ${t.low_ctr_min_impressions} impressions whose CTR is under ${t.low_ctr_ratio * 100}% of the expected CTR for their position; brand queries${brands ? " (" + brands + ")" : ""} excluded. Click a page to expand.`;
-  $("lc").innerHTML = lc.length ? lc.map(g => `<details><summary><b>${esc(path(g.page))}</b> <span class="sub">${num(g.missed)} clicks lost · ${g.queries.length} queries · ${g.queries.filter(q => q.tag === "on-target").length} on-target</span></summary>
-    <table class="sortable"><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">CTR</th><th class="n">Expected CTR</th><th class="n">Position</th><th class="n" title="Estimate: impressions × typical CTR for the position − actual clicks">Clicks lost</th><th>Tag</th></tr>${g.queries.map(q =>
-    `<tr><td>${esc(q.query)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${(q.ctr * 100).toFixed(1)}%</td><td class="n">${(q.expected_ctr * 100).toFixed(0)}%</td><td class="n">${q.position.toFixed(1)}</td><td class="n">${num(q.missed)}</td><td><span class="badge ${q.tag === "on-target" ? "on" : "off"}">${esc(q.tag)}</span></td></tr>`).join("")}</table></details>`).join("")
-    : '<div class="sub">No page-1 queries have low CTR for their position.</div>';
+  $("lc").innerHTML = lc.length ? lc.map(g => `<details>${summ(g)}
+    <table class="sortable"><tr><th>Query</th><th class="n">Volume</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">CTR</th><th class="n">Expected CTR</th><th class="n">Position</th><th class="n" title="${lostTip}">Clicks lost</th><th>Intent</th><th>Tag</th></tr>${g.queries.map(q =>
+    `<tr><td>${esc(q.query)}</td><td class="n">${vol(q.volume)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${(q.ctr * 100).toFixed(1)}%</td><td class="n">${(q.expected_ctr * 100).toFixed(0)}%</td><td class="n">${q.position.toFixed(1)}</td><td class="n">${num(q.missed)}</td><td>${iBadges(q)}</td><td>${tagB(q)}</td></tr>`).join("")}</table></details>`).join("")
+    : `<div class="sub">No page-1 queries${none} have low CTR for their position.</div>`;
+  const rows = [];
+  p2.forEach(g => g.queries.forEach(q => rows.push({page: g.page, sec: "page 2", q})));
+  lc.forEach(g => g.queries.forEach(q => rows.push({page: g.page, sec: "low CTR", q})));
+  rows.sort((a, b) => (b.q.missed || 0) - (a.q.missed || 0));
+  $("top").innerHTML = rows.length ? `<table class="sortable"><tr><th>Page</th><th>Query</th><th>Section</th><th class="n">Volume</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">Position</th><th class="n" title="${lostTip}">Clicks lost</th><th>Intent</th><th>Tag</th></tr>${rows.map(({page, sec, q}) =>
+    `<tr><td>${esc(path(page))}</td><td>${esc(q.query)}</td><td>${sec}</td><td class="n">${vol(q.volume)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${q.position.toFixed(1)}</td><td class="n">${num(q.missed || 0)}</td><td>${iBadges(q)}</td><td>${tagB(q)}</td></tr>`).join("")}</table>`
+    : `<div class="sub">No opportunities${none}.</div>`;
   const thr = `a drop of at least ${t.decay_pct * 100}% and ${t.decay_min_clicks} clicks versus the previous period or the same period last year`;
   $("dcintro").textContent = `Flagged: ${thr}.`;
   const names = {previous: "previous period", year_ago: "year ago"};
@@ -100,6 +136,21 @@ function render(d) {
     `<tr><td>${esc(path(p.page))}</td><td class="n">${num(p.current_clicks)}</td><td class="n">${cmp(p.previous)}</td><td class="n">${cmp(p.year_ago)}</td><td>${p.flagged_on.map(n => names[n] || n).join(", ")}</td></tr>`).join("")}</table>`
     : `<div class="sub">No pages meet the decay thresholds (${thr}).</div>`;
 }
+document.querySelectorAll("#views button").forEach(b => b.onclick = () => { view = b.dataset.view; store("view", view); draw(); });
+document.querySelectorAll("#ifilt button").forEach(b => b.onclick = () => { ifilt = b.dataset.intent; store("intent", ifilt); draw(); });
+$("fetchvol").onclick = async () => {
+  if (!confirm("Fetch search volumes from DataForSEO (about $0.08)? Cached queries are skipped.")) return;
+  const b = $("fetchvol"); b.disabled = true; b.textContent = "Fetching…"; $("volmsg").textContent = ""; $("err").innerHTML = "";
+  try {
+    const r = await fetch("api/digest/volumes", {method: "POST"});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    $("volmsg").textContent = `Fetched ${j.fetched}, cached ${j.cached}, cost $${Number(j.cost || 0).toFixed(2)}`;
+    await load(false);
+  } catch (e) { $("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  b.disabled = false; b.textContent = "Fetch volumes (paid)";
+  window.spendLights && window.spendLights.refresh();
+};
 async function load(refresh) {
   const b = $("refresh"); b.disabled = true; if (refresh) b.textContent = "Fetching…";
   $("err").innerHTML = "";

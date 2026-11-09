@@ -40,7 +40,7 @@
   <div id="err"></div>
   <div class="card">
     <div class="bar">
-      <button id="run">Run check now</button>
+      <button id="run">Run check now</button> <span class="spend-light" id="sl" data-feature="mappack"></span>
       <label class="sub">Spot check first <input id="lim" type="number" min="1" style="width:70px" placeholder="all"> keywords</label>
       <span class="sub" id="msg">Google SERP from Colchester for every stored target keyword. Monthly run: see README.</span>
     </div>
@@ -49,6 +49,7 @@
   <div class="card"><h3 style="margin-top:0">Keywords</h3><div class="bar"><label class="sub"><input type="checkbox" id="only"> pack present only</label></div><table id="res"></table><div class="sub">Live columns are single checks and swing between calls; our reference position is Search Console.</div></div>
   <div class="card"><h3 style="margin-top:0">Run history</h3><table id="hist"></table></div>
 </main>
+<script src="spendlight.js"></script>
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const dash = v => v == null ? "<span class=sub>-</span>" : esc(v);
@@ -105,6 +106,9 @@ async function show(id) {
   document.getElementById("sum").innerHTML = `<div class="sub">Run #${cur.id} - ${esc(cur.started_at)} - ${esc(cur.status)} (${cur.done}/${cur.keywords}) - spend ${money(cur.cost)}${cur.error ? " - " + esc(cur.error) : ""}</div>
     <table><tr><th${tip("sum|Keywords")}>Keywords</th><th${tip("sum|Pack present")}>Pack present</th><th${tip("sum|Us in pack")}>Us in pack</th><th${tip("sum|Them in pack")}>Them in pack</th><th${tip("sum|Avg pack rank us")}>Avg pack rank us</th><th${tip("sum|Avg pack rank them")}>Avg pack rank them</th><th${tip("sum|Wins / win set")}>Wins / win set</th></tr>
     <tr><td>${s.keywords}</td><td>${s.pack_present}</td><td>${s.us_in_pack}</td><td>${s.them_in_pack}</td><td>${avg(s.us_avg_pack_rank)}</td><td>${avg(s.them_avg_pack_rank)}</td><td>${s.wins} / ${s.win_set}</td></tr></table>`;
+  const sl = document.getElementById("sl");
+  if (cur.status === "done") { sl.dataset.ts = cur.finished_at || cur.started_at; sl.dataset.cost = cur.cost || 0; } else { delete sl.dataset.ts; delete sl.dataset.cost; }
+  if (window.spendLights) window.spendLights.refresh();
   renderRes();
   clearTimeout(timer);
   if (cur.status === "running") timer = setTimeout(wrap(() => show(id)), 3000);

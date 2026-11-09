@@ -171,6 +171,11 @@ def clean_domain(raw: str) -> str:
     return d
 
 
+@app.get("/spendlight.js")
+def spendlight_js():
+    return FileResponse(STATIC / "spendlight.js", media_type="application/javascript")
+
+
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")
