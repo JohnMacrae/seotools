@@ -38,6 +38,7 @@ _Avoid_: cluster, topic, keyword group, improve
 
 **Close variants**:
 Keywords Google treats as the same search (spellings, word order, singular/plural); they share one search volume figure, which is counted once.
+In on-page checks a match also allows up to 2 extra words between the keyword's words ("Wedding dress & bridal shop in Colchester" holds "wedding dress shop Colchester"); anchor matching stays strict.
 _Avoid_: duplicates, synonyms
 
 **Target page**:
