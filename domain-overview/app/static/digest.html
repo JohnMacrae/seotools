@@ -89,8 +89,8 @@ function render(d) {
   const lc = d.low_ctr || [];
   const brands = (t.brand_terms || []).join(", ");
   $("lcintro").textContent = `Queries at position below ${t.low_ctr_pos_max} with at least ${t.low_ctr_min_impressions} impressions whose CTR is under ${t.low_ctr_ratio * 100}% of the expected CTR for their position; brand queries${brands ? " (" + brands + ")" : ""} excluded. Click a page to expand.`;
-  $("lc").innerHTML = lc.length ? lc.map(g => `<details><summary><b>${esc(path(g.page))}</b> <span class="sub">${num(g.missed)} clicks missed · ${g.queries.length} queries · ${g.queries.filter(q => q.tag === "on-target").length} on-target</span></summary>
-    <table class="sortable"><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">CTR</th><th class="n">Expected CTR</th><th class="n">Position</th><th class="n">Clicks missed</th><th>Tag</th></tr>${g.queries.map(q =>
+  $("lc").innerHTML = lc.length ? lc.map(g => `<details><summary><b>${esc(path(g.page))}</b> <span class="sub">${num(g.missed)} clicks lost · ${g.queries.length} queries · ${g.queries.filter(q => q.tag === "on-target").length} on-target</span></summary>
+    <table class="sortable"><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">CTR</th><th class="n">Expected CTR</th><th class="n">Position</th><th class="n" title="Estimate: impressions × typical CTR for the position − actual clicks">Clicks lost</th><th>Tag</th></tr>${g.queries.map(q =>
     `<tr><td>${esc(q.query)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${(q.ctr * 100).toFixed(1)}%</td><td class="n">${(q.expected_ctr * 100).toFixed(0)}%</td><td class="n">${q.position.toFixed(1)}</td><td class="n">${num(q.missed)}</td><td><span class="badge ${q.tag === "on-target" ? "on" : "off"}">${esc(q.tag)}</span></td></tr>`).join("")}</table></details>`).join("")
     : '<div class="sub">No page-1 queries have low CTR for their position.</div>';
   const thr = `a drop of at least ${t.decay_pct * 100}% and ${t.decay_min_clicks} clicks versus the previous period or the same period last year`;
