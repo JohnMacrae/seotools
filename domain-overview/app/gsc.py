@@ -64,6 +64,14 @@ def ensure_tables(con: sqlite3.Connection):
     con.execute("""CREATE TABLE IF NOT EXISTS gsc_daily (
         page TEXT NOT NULL, date TEXT NOT NULL, clicks REAL, impressions REAL, position REAL,
         PRIMARY KEY(page, date))""")
+    con.execute("""CREATE TABLE IF NOT EXISTS gsc_site_daily (
+        page TEXT NOT NULL, date TEXT NOT NULL, clicks REAL, impressions REAL, position REAL,
+        PRIMARY KEY(page, date))""")
+    con.execute("""CREATE TABLE IF NOT EXISTS gsc_digest_meta (
+        site TEXT PRIMARY KEY, fetched_at TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+        daily_start TEXT NOT NULL)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS gsc_digest_rows (
+        page TEXT NOT NULL, query TEXT NOT NULL, clicks REAL, impressions REAL, ctr REAL, position REAL)""")
     con.execute("CREATE INDEX IF NOT EXISTS ix_gsc_rows ON gsc_rows(fetch_id)")
     con.execute("CREATE INDEX IF NOT EXISTS ix_gsc_pages ON gsc_pages(fetch_id)")
 
@@ -229,3 +237,49 @@ def window_stats(rows: list[dict], done: dt.date, data_end: dt.date, days: int =
 
     return {"days": n, "before": tot(done - dt.timedelta(days=n), done - dt.timedelta(days=1)),
             "after": tot(done, done + dt.timedelta(days=n - 1))}
+
+
+DIGEST_WINDOW = 28      # page+query totals for exactly the last 28 data days (GSC_DAYS may differ)
+DIGEST_HISTORY = 400    # site-wide daily history, days back from the data end (covers the year-ago window)
+
+
+def get_digest_data(con: sqlite3.Connection, refresh: bool = False) -> dict:
+    """Digest inputs, cached like get_fetch (re-fetched on refresh or when older than CACHE_HOURS):
+    {fetched_at, page2_start, page2_end, daily_start, rows (page x query, last 28 data days), daily (site-wide page x date)}."""
+    if not configured():
+        raise GSCError("Search Console not configured")
+    ensure_tables(con)
+    meta = con.execute("SELECT * FROM gsc_digest_meta WHERE site=?", (SITE_URL,)).fetchone()
+    fresh = meta and (dt.datetime.utcnow() - dt.datetime.fromisoformat(meta["fetched_at"])) < dt.timedelta(hours=CACHE_HOURS)
+    if refresh or not fresh:
+        host = site_host()
+        end = dt.date.today() - dt.timedelta(days=LAG_DAYS)
+        start = end - dt.timedelta(days=DIGEST_WINDOW - 1)
+        dstart = end - dt.timedelta(days=DIGEST_HISTORY)
+        base = {"dataState": "final"}
+        try:
+            token = _token()
+            with httpx.Client(timeout=300) as client:
+                pq = _query(client, token, {**base, "startDate": start.isoformat(), "endDate": end.isoformat(),
+                                            "dimensions": ["page", "query"]})
+                pd = _query(client, token, {**base, "startDate": dstart.isoformat(), "endDate": end.isoformat(),
+                                            "dimensions": ["page", "date"]})
+        except GSCError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise GSCError(f"{type(e).__name__}: {e}"[:400])
+        rows = _merge(pq, host, 2)
+        daily = _merge(pd, host, 2)  # (page, date, clicks, impressions, ctr, position)
+        con.execute("DELETE FROM gsc_digest_rows")
+        con.execute("DELETE FROM gsc_site_daily")
+        con.executemany("INSERT INTO gsc_digest_rows VALUES (?,?,?,?,?,?)", rows)
+        con.executemany("INSERT INTO gsc_site_daily VALUES (?,?,?,?,?)", [(p, d, c, i, pos) for p, d, c, i, _ctr, pos in daily])
+        con.execute("INSERT OR REPLACE INTO gsc_digest_meta VALUES (?,?,?,?,?)",
+                    (SITE_URL, dt.datetime.utcnow().isoformat(timespec="seconds"), start.isoformat(), end.isoformat(),
+                     dstart.isoformat()))
+        con.commit()
+        meta = con.execute("SELECT * FROM gsc_digest_meta WHERE site=?", (SITE_URL,)).fetchone()
+    return {"fetched_at": meta["fetched_at"], "page2_start": meta["start_date"], "page2_end": meta["end_date"],
+            "daily_start": meta["daily_start"],
+            "rows": [dict(r) for r in con.execute("SELECT page,query,clicks,impressions,ctr,position FROM gsc_digest_rows")],
+            "daily": [dict(r) for r in con.execute("SELECT page,date,clicks,impressions,position FROM gsc_site_daily")]}

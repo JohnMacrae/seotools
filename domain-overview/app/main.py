@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, supporting, targets
+from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, supporting, targets
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -404,6 +404,26 @@ def gsc_fetch(refresh: bool = False):
             return gsc.get_fetch(con, refresh)
         except gsc.GSCError as e:
             raise HTTPException(503 if not gsc.configured() else 502, str(e))
+
+
+@app.get("/api/digest")
+def api_digest(refresh: bool = False):
+    with closing(db()) as con:
+        try:
+            d = gsc.get_digest_data(con, refresh)
+        except gsc.GSCError as e:
+            raise HTTPException(503 if not gsc.configured() else 502, str(e))
+        host = gsc.site_host()
+        tbp: dict[str, list[str]] = {}
+        for t in targets.list_all(con):
+            page = gsc.normalise(f"https://{host}{t['path']}", host)
+            kws = [k for k in [t["primary_keyword"], *t["supporting"]] if k and "{" not in k]
+            if page:
+                tbp.setdefault(page, []).extend(kws)
+    end = dt.date.fromisoformat(d["page2_end"])
+    return {"data_dates": {"page2": {"start": d["page2_start"], "end": d["page2_end"]}, "decay": digest.decay_dates(end)},
+            "page2": digest.page2(d["rows"], tbp), "decaying": digest.decay(d["daily"], end),
+            "thresholds": digest.thresholds(), "fetched_at": d["fetched_at"]}
 
 
 def _strength(con, crawl_id: int, with_text: bool = False):
