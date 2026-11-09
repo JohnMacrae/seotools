@@ -295,6 +295,7 @@ async def run(pages: list[dict], links: list[dict], strength: dict, target_rows:
     ranges = {lp.norm(u) for u in linkgraph.last_stock(links)["ranges"]}
     bridal = [r for r in target_rows if (r.get("product_line") or "bridal") == "bridal" and (r.get("phase") or 1) == 1]
     by_url = {lp.norm(p["url"]): p for p in pages if linkgraph.is_html_ok(p)}
+    linked = linkgraph.linked_pairs(pages, links, lp.norm)  # pills, related blocks; not the site-wide menu
     entries, warnings = [], []
     for e in linkmap.expand(bridal, pages, S, ranges):
         tp = by_url.get(lp.norm(e["target_page"]))
@@ -308,7 +309,9 @@ async def run(pages: list[dict], links: list[dict], strength: dict, target_rows:
     async with httpx.AsyncClient() as client:
         async def one(e, tp):
             nonlocal done
-            cands = [c for c in eligible(pages, e["target_page"]) if (lp.norm(e["target_page"]), c["url"]) not in decided]
+            tgt = lp.norm(e["target_page"])
+            cands = [c for c in eligible(pages, e["target_page"])
+                     if (tgt, c["url"]) not in decided and (c["url"], tgt) not in linked]
             try:
                 return await review_target(client, e, tp, cands, sem)
             except (llm.LLMError, httpx.HTTPError) as ex:

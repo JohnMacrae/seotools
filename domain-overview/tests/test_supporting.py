@@ -248,3 +248,34 @@ def test_linkmap_no_supporting_flag():
     assert "no supporting pages" not in e["flags"] and e["supporting_approved"] == 1
     e = linkmap.build(rows, pages, [], S, set(), [], [], True, [sup("rejected")])["entries"][0]
     assert "no supporting pages" in e["flags"] and e["supporting"] == []
+
+
+def test_run_skips_pages_already_linking_target_anywhere(monkeypatch):
+    # FAQ has a template pill (main), BLOG a nav link, query/trailing slash must still match
+    for placement, src, dst in [("main", FAQ, TARGET), ("aside", FAQ, TARGET + "/"), ("nav", FAQ, TARGET)]:
+        calls = []
+        _mock(monkeypatch, [{"url": BLOG, "reason": "planning"}], {BLOG: {"skip": True, "why": "x"}}, calls)
+        links = [{"src": src, "dst": dst, "anchor": "Short", "placement": placement}]
+        asyncio.run(sp.run(PAGES, links, STRENGTH, [ROW], set()))
+        prompt = next(c for c in calls if "Candidate pages" in c)
+        assert FAQ not in prompt and BLOG in prompt, placement
+
+
+def test_planner_skips_approved_row_with_template_link():
+    S, P, topics, row = _plan_world()
+    appr = lambda n: {"target_page": TARGET, "supporting_page": U(f"/blog/a{n}"), "anchor": "short wedding dresses",
+                      "in_text": False, "sentence": "Our short wedding dresses go home on the day.", "reason": "r"}
+    args = (S, P, defaultdict(set), topics, [], set(), set(), [row], [appr(4), appr(5)])
+    both = lambda **k: {c["src"] for c in lp.candidates(*args, **k) if c["kind"] == "supporting"}
+    assert both() == {U("/blog/a4"), U("/blog/a5")}
+    assert both(all_linked={(U("/blog/a5"), TARGET)}) == {U("/blog/a4")}
+
+
+def test_sitewide_menu_link_does_not_block(monkeypatch):
+    # a menu link to the target on every page is boilerplate: FAQ stays a candidate
+    calls = []
+    _mock(monkeypatch, [{"url": BLOG, "reason": "planning"}], {BLOG: {"skip": True, "why": "x"}}, calls)
+    links = [{"src": p["url"], "dst": TARGET, "anchor": "Short", "placement": "nav"} for p in PAGES]
+    asyncio.run(sp.run(PAGES, links, STRENGTH, [ROW], set()))
+    prompt = next(c for c in calls if "Candidate pages" in c)
+    assert FAQ in prompt and BLOG in prompt

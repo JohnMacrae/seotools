@@ -136,6 +136,12 @@ def sitewide_links(pages: list[dict], links: list[dict]) -> set[tuple[str, str]]
     return {k for k, s in srcs.items() if len(s) > SITEWIDE_SHARE * len(ok)}
 
 
+def linked_pairs(pages: list[dict], links: list[dict], norm=lambda u: u) -> set[tuple[str, str]]:
+    """(src, dst) pairs linked anywhere on the page (pills, related blocks, breadcrumbs), minus the site-wide menu."""
+    wide = sitewide_links(pages, links)
+    return {(norm(l["src"]), norm(l["dst"])) for l in links if (l["dst"], _anchor(l["anchor"])) not in wide}
+
+
 def contextual_links(pages: list[dict], links: list[dict]) -> list[dict]:
     """Links that are not boilerplate: only non-sitewide links in main, body or aside."""
     wide = sitewide_links(pages, links)

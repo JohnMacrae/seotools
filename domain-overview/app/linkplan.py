@@ -246,7 +246,8 @@ def store_opportunity(row: dict, line: str) -> float:
 
 
 def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[dict], ranges: set, last: set,
-               targets: list[dict] | None = None, supporting: list[dict] | None = None) -> list[dict]:
+               targets: list[dict] | None = None, supporting: list[dict] | None = None,
+               all_linked: set | None = None) -> list[dict]:
     """Scored (src, dst, kind) candidates before caps."""
     home = next((u for u in S if path(u) == "/"), None)
     targets_of = topics["page_targets"]
@@ -319,7 +320,7 @@ def candidates(S: dict, P: dict, out_ctx: dict, topics: dict, wrong_page: list[d
     # 1b. Approved supporting pages link to their target page first, with the approved anchor and sentence.
     for r in supporting or []:
         src, dst = norm(r["supporting_page"]), norm(r["target_page"])
-        if dst not in S:
+        if dst not in S or (src, dst) in (all_linked or ()):  # already linked anywhere on the page (template pills etc.)
             continue
         before = len(cands)
         add(src, dst, "supporting", (tl.get(dst) or S[dst]).get("opportunity", 0) + 1,
@@ -657,7 +658,8 @@ async def build_plan(pages: list[dict], links: list[dict], strength: dict, *, pr
         warnings += w
 
         say("Choosing link candidates")
-        chosen = select(candidates(S, P, out_ctx, topics, strength.get("wrong_page", []), ranges, last, targets, supporting), S)
+        chosen = select(candidates(S, P, out_ctx, topics, strength.get("wrong_page", []), ranges, last, targets, supporting,
+                                     linkgraph.linked_pairs(pages, links, norm)), S)
         by_src = defaultdict(list)
         for c_ in chosen:
             by_src[c_["src"]].append(c_)
