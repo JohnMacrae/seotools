@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digest</title>
+<style>
+  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
+    color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; overflow-x: auto; }
+  input, button, textarea { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--card); color: var(--ink); }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: var(--card); color: var(--ink); border-color: var(--line); }
+  button.del { background: var(--card); color: var(--bad); border-color: var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  td input, td textarea { width: 100%; } td textarea { height: 64px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tabs button { background: var(--card); color: var(--ink); border-color: var(--line); } .tabs button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .strip { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; min-width: 120px; }
+  .stat b { display: block; font-size: 20px; } .stat span { color: var(--muted); font-size: 12px; }
+  .chip { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; margin-left: 6px; background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); white-space: nowrap; font-weight: 400; }
+  .lm h3 { margin: 0 0 4px; font-size: 14px; } .lm p { margin: 4px 0; }
+  .lm summary { cursor: pointer; color: var(--muted); margin: 8px 0 4px; }
+  .st-done { color: #2e8b57; } .st-bad { color: var(--bad); } .st-existing { color: var(--muted); }
+  th.sort { cursor: pointer; }
+  mark { background: var(--accent-bg, #fff3a8); color: var(--ink); padding: 0 2px; border-radius: 3px; }
+  .sup { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+  .sup li { margin: 6px 0; } .sup .btns { white-space: nowrap; }
+  .sup button { padding: 2px 8px; font-size: 12px; }
+  code { background: var(--subtle); padding: 0 4px; border-radius: 4px; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+  .badge.on { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); }
+  .badge.off { background: var(--subtle); color: var(--muted); border: 1px solid var(--line); }
+  td.n, th.n { text-align: right; } .neg { color: var(--bad); } h2 { font-size: 15px; margin: 0 0 6px; } h3 { font-size: 14px; margin: 14px 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest" class="on">Digest</a></nav></div>
+</header>
+<main>
+  <div id="err"></div>
+  <div class="bar"><button id="refresh">Refresh</button><span class="sub" id="hdr"></span></div>
+  <div class="sub" style="margin-bottom:14px">All dates are Search Console data dates (the last few days are not yet available).</div>
+  <div class="card"><h2>Page-2 queries</h2><div class="sub" id="p2intro"></div><div id="p2"></div></div>
+  <div class="card"><h2>Decaying pages</h2><div class="sub" id="dcintro"></div><div id="dc"></div></div>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+const rng = r => `${r.start} to ${r.end}`;
+const path = p => { try { return new URL(p).pathname || "/"; } catch { return p; } };
+const num = n => Math.round(n).toLocaleString();
+const sgn = n => (n > 0 ? "+" : n < 0 ? "-" : "") + num(Math.abs(n));
+function cmp(c) {
+  if (!c) return '<span class="sub">no data</span>';
+  const pct = c.pct == null ? "n/a" : (c.pct > 0 ? "+" : "") + (c.pct * 100).toFixed(0) + "%";
+  return `${num(c.clicks)} <span class="${c.delta < 0 ? "neg" : ""}">(${sgn(c.delta)}, ${pct})</span>`;
+}
+function render(d) {
+  const dd = d.data_dates, t = d.thresholds;
+  $("hdr").innerHTML = `Page-2 window ${rng(dd.page2)} · Decay: current ${rng(dd.decay.current)}, previous ${rng(dd.decay.previous)}, year ago ${rng(dd.decay.year_ago)} · fetched ${esc(d.fetched_at)}`;
+  $("p2intro").textContent = `Queries at average position ${t.pos_min} to ${t.pos_max} with at least ${t.min_impressions} impressions, over ${t.window_days} days.`;
+  $("p2").innerHTML = d.page2.length ? d.page2.map(g => `<h3>${esc(path(g.page))} <span class="sub">${num(g.impressions)} impressions</span></h3>
+    <table><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">Position</th><th>Tag</th></tr>${g.queries.map(q =>
+    `<tr><td>${esc(q.query)}</td><td class="n">${num(q.impressions)}</td><td class="n">${num(q.clicks)}</td><td class="n">${q.position.toFixed(1)}</td><td><span class="badge ${q.tag === "on-target" ? "on" : "off"}">${esc(q.tag)}</span></td></tr>`).join("")}</table>`).join("")
+    : '<div class="sub">No page-2 queries meet the thresholds.</div>';
+  const thr = `a drop of at least ${t.decay_pct * 100}% and ${t.decay_min_clicks} clicks versus the previous period or the same period last year`;
+  $("dcintro").textContent = `Flagged: ${thr}.`;
+  const names = {previous: "previous period", year_ago: "year ago"};
+  $("dc").innerHTML = d.decaying.length ? `<table><tr><th>Page</th><th class="n">Current clicks</th><th class="n">Previous period</th><th class="n">Year ago</th><th>Flagged on</th></tr>${d.decaying.map(p =>
+    `<tr><td>${esc(path(p.page))}</td><td class="n">${num(p.current_clicks)}</td><td class="n">${cmp(p.previous)}</td><td class="n">${cmp(p.year_ago)}</td><td>${p.flagged_on.map(n => names[n] || n).join(", ")}</td></tr>`).join("")}</table>`
+    : `<div class="sub">No pages meet the decay thresholds (${thr}).</div>`;
+}
+async function load(refresh) {
+  const b = $("refresh"); b.disabled = true; if (refresh) b.textContent = "Fetching…";
+  $("err").innerHTML = "";
+  try {
+    const r = await fetch("api/digest?refresh=" + refresh);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    render(j);
+  } catch (e) { $("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  b.disabled = false; b.textContent = "Refresh";
+}
+$("refresh").onclick = () => load(true);
+load(false);
+</script>
+</body>
+</html>

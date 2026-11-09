@@ -341,6 +341,11 @@ def linking_page():
     return FileResponse(STATIC / "linking.html")
 
 
+@app.get("/digest")
+def digest_page():
+    return FileResponse(STATIC / "digest.html")
+
+
 @app.post("/api/crawl")
 async def start_crawl(domain: str):
     d = clean_domain(domain)

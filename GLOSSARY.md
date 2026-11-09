@@ -84,3 +84,14 @@ _Avoid_: wrong anchor (that means a live anchor differing from the planned one)
 **Link map**:
 The view of every keyword target with its target page, the contextual links pointing at it, their anchors and plan status, and what remains to do.
 _Avoid_: link plan (the plan is the list of proposed links; the map is the whole picture)
+
+## Reviews
+
+**Decaying page**:
+A page whose clicks in the last 28 data days fell by at least 30% and at least 5 clicks against either the previous 28 days or the same 28 days a year earlier (364 days back). "No data" when Search Console has no rows for that window (the property's data starts 2026-09-13).
+
+**Digest**:
+Weekly review page (UI only) built from Search Console data only; no paid calls.
+
+**Page-2 query**:
+A query with average position 8–20 over the last 28 data days and at least 10 impressions; tagged on-target when it is a close variant of the page's keyword target, else off-target (review signal only).
