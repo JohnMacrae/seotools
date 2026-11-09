@@ -160,10 +160,94 @@ def test_low_ctr_sorted_by_missed_and_shape():
     assert [x["query"] for x in p["queries"]] == ["big", "small"]
     assert p["queries"][0]["missed"] == 270 and p["missed"] == 276
     assert p["impressions"] == 1200 and p["clicks"] == 10
-    assert set(p["queries"][0]) == {"query", "impressions", "clicks", "ctr", "expected_ctr", "position", "missed", "tag"}
+    assert set(p["queries"][0]) == {"query", "impressions", "clicks", "ctr", "expected_ctr", "position", "missed", "tag", "intent", "volume"}
 
 
 def test_low_ctr_tags():
     rows = [q("short wedding dresses", 2, imp=500, clicks=0), q("prom dress", 2, imp=400, clicks=0)]
     res = lc(rows, {P: ["short wedding dresses"]})
     assert {x["query"]: x["tag"] for x in res[0]["queries"]} == {"short wedding dresses": "on-target", "prom dress": "off-target"}
+
+
+# ---- issue #20: intent, page-2 clicks lost, cached volumes ----
+
+def test_intent_tagging():
+    assert digest.intent("book a wedding dress appointment") == ["booking"]
+    assert digest.intent("cheap wedding dresses") == ["sales"]
+    assert digest.intent("Buy Dress Near Me") == ["booking", "sales"]
+    assert digest.intent("lace wedding dress") == []
+    assert digest.intent("wedding shops Colchester") == ["booking"]
+
+
+def test_intent_whole_word_and_phrase():
+    assert digest.intent("undercover bride") == []
+    assert digest.intent("dress under 500") == ["sales"]
+    assert digest.intent("bridal store nearby") == ["booking"]
+    assert digest.intent("shop near me") == ["booking"]
+    assert digest.intent("dress near meadow") == []
+    assert digest.intent("nearme") == []
+
+
+def test_page2_missed_formula_and_floor():
+    rows = [q("a", 10, imp=200, clicks=3), q("b", 10, imp=100, clicks=9), q("c", 10, imp=40, clicks=0, page="https://x.test/b")]
+    res = digest.page2(rows, {}, {"a": 700})
+    by = {x["query"]: x for p in res for x in p["queries"]}
+    assert by["a"]["missed"] == 200 * 0.05 - 3
+    assert by["b"]["missed"] == 0
+    assert by["a"]["volume"] == 700 and by["b"]["volume"] is None
+    assert by["a"]["intent"] == []
+    assert [p["page"] for p in res] == [P, "https://x.test/b"]
+    assert res[0]["missed"] == 7 and res[1]["missed"] == 2
+
+
+def test_low_ctr_rows_get_intent_and_volume():
+    res = digest.low_ctr([q("Cheap Dress", 3, imp=1000, clicks=1)], {}, {"cheap dress": 90})
+    r = res[0]["queries"][0]
+    assert r["intent"] == ["sales"] and r["volume"] == 90
+
+
+def _vol_con():
+    import sqlite3
+    con = sqlite3.connect(":memory:")
+    digest.ensure_tables(con)
+    return con
+
+
+def _fake_dfs(monkeypatch, cost=0.08):
+    import asyncio  # noqa: F401
+    from app import dfs
+    calls = []
+
+    async def post(c, path, task, **k):
+        calls.append((path, task))
+        return [{"keyword": kw, "search_volume": None if kw == "nullkw" else 100} for kw in task["keywords"]], cost
+    monkeypatch.setattr(dfs, "MOCK", False)
+    monkeypatch.setattr(dfs, "post_path", post)
+    return calls
+
+
+def test_fetch_volumes_cache_ttl_and_cost(monkeypatch):
+    import asyncio
+    calls = _fake_dfs(monkeypatch)
+    con = _vol_con()
+    r1 = asyncio.run(digest.fetch_volumes(con, ["A", "b", "a", "nullkw"]))
+    assert r1 == {"fetched": 3, "cached": 0, "cost": 0.08}
+    assert len(calls) == 1
+    path, task = calls[0]
+    assert path == "keywords_data/google_ads/search_volume/live"
+    assert task["keywords"] == ["a", "b", "nullkw"] and task["location_code"] == 2826 and task["language_code"] == "en"
+    assert con.execute("SELECT cost, keywords FROM volume_runs").fetchall() == [(0.08, 3)]
+    assert digest.cached_volumes(con) == {"a": 100, "b": 100}
+    assert digest.volume_status(con) == {"fetched_at": con.execute("SELECT fetched_at FROM volume_runs").fetchone()[0],
+                                         "cost": 0.08, "count": 3}
+    # second call within TTL: nothing requested, no DFS call, no new run row (NULL volume not re-fetched)
+    r2 = asyncio.run(digest.fetch_volumes(con, ["a", "b", "nullkw"]))
+    assert r2 == {"fetched": 0, "cached": 3, "cost": 0.0}
+    assert len(calls) == 1 and con.execute("SELECT COUNT(*) FROM volume_runs").fetchone()[0] == 1
+    # a new query plus a stale row: only those are requested
+    old = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=31)).isoformat()
+    con.execute("UPDATE query_volumes SET fetched_at=? WHERE query='b'", (old,))
+    r3 = asyncio.run(digest.fetch_volumes(con, ["a", "b", "c"]))
+    assert r3 == {"fetched": 2, "cached": 1, "cost": 0.08}
+    assert calls[1][1]["keywords"] == ["b", "c"]
+    assert con.execute("SELECT COUNT(*) FROM volume_runs").fetchone()[0] == 2

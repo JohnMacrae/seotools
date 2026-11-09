@@ -11,11 +11,12 @@ from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, supporting, targets
+from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -142,6 +143,7 @@ def db() -> sqlite3.Connection:
     targets.ensure_table(con)
     mappack.ensure_tables(con)
     supporting.ensure_tables(con)
+    digest.ensure_tables(con)
     return con
 
 
@@ -425,10 +427,28 @@ def api_digest(refresh: bool = False):
             kws = [k for k in [t["primary_keyword"], *t["supporting"]] if k and "{" not in k]
             if page:
                 tbp.setdefault(page, []).extend(kws)
+        vols = digest.cached_volumes(con)
+        vstatus = digest.volume_status(con)
     end = dt.date.fromisoformat(d["page2_end"])
     return {"data_dates": {"page2": {"start": d["page2_start"], "end": d["page2_end"]}, "decay": digest.decay_dates(end)},
-            "page2": digest.page2(d["rows"], tbp), "low_ctr": digest.low_ctr(d["rows"], tbp), "decaying": digest.decay(d["daily"], end),
-            "thresholds": digest.thresholds(), "fetched_at": d["fetched_at"]}
+            "page2": digest.page2(d["rows"], tbp, vols), "low_ctr": digest.low_ctr(d["rows"], tbp, vols),
+            "decaying": digest.decay(d["daily"], end),
+            "thresholds": digest.thresholds(), "fetched_at": d["fetched_at"], "volumes": vstatus}
+
+
+@app.post("/api/digest/volumes")
+async def api_digest_volumes():
+    """Paid: fetch search volumes for the digest's page-2 + low-CTR queries not cached in the last VOLUME_TTL_DAYS."""
+    with closing(db()) as con:
+        try:
+            d = gsc.get_digest_data(con, False)
+        except gsc.GSCError as e:
+            raise HTTPException(503 if not gsc.configured() else 502, str(e))
+        qs = digest.digest_queries(digest.page2(d["rows"], {}), digest.low_ctr(d["rows"], {}))
+        try:
+            return await digest.fetch_volumes(con, qs)
+        except (dfs.DFSError, httpx.HTTPError) as e:
+            raise HTTPException(502, f"DataForSEO: {e}")
 
 
 def _strength(con, crawl_id: int, with_text: bool = False):
@@ -898,6 +918,12 @@ def targets_delete(tid: int):
         if not targets.delete(con, tid):
             raise HTTPException(404, "No such target")
     return {"deleted": tid}
+
+
+@app.get("/api/spend-status")
+def spend_status():
+    with closing(db()) as con:
+        return {"stale_days": spend.STALE_DAYS, "features": spend.features(con)}
 
 
 @app.get("/healthz")
