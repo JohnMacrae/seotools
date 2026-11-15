@@ -1,6 +1,6 @@
 # SEO tools
 
-Tools for winning search traffic for serenitybrides.com, a bridal boutique in Colchester, Essex, against named competitors.
+Tools for winning search traffic against named competitors, worked one site at a time. The first site is serenitybrides.com, a bridal boutique in Colchester, Essex.
 
 ## Competition
 
@@ -53,6 +53,10 @@ _Avoid_: source page, link-from page
 The wider subject a hub page covers (for example short wedding dresses under bridal); a topic may hold several keyword targets.
 _Avoid_: theme, cluster
 
+**Label**:
+A tag on a keyword target used to group and filter targets when tracking rankings. It is either derived (product line, phase, topic, target page folder) or a free tag the owner adds (for example "Services", "PAA").
+_Avoid_: category, group, tag (unqualified)
+
 **Style tag**:
 An owner-approved label on a dress for a shopper-facing style (for example lace, short), used to group dresses into a style page; distinct from designer.
 _Avoid_: facet, attribute, filter
@@ -84,6 +88,20 @@ _Avoid_: wrong anchor (that means a live anchor differing from the planned one)
 **Link map**:
 The view of every keyword target with its target page, the contextual links pointing at it, their anchors and plan status, and what remains to do.
 _Avoid_: link plan (the plan is the list of proposed links; the map is the whole picture)
+
+## Tracking
+
+**Site**:
+A website the rank tracker covers, with its own Search Console property, keyword targets, labels, journal and repo. serenitybrides.com is the first.
+_Avoid_: property (that is Search Console's term), domain, project
+
+**Journal entry**:
+A record that a page, or every page matching a URL pattern (a template change), changed on a site: the live date, the page or pattern, a change type (new page, copy, headings, title/meta, internal links, technical) and a one-line note. It comes from the site's repo or is added by hand for changes made off-site.
+_Avoid_: log, change note, annotation
+
+**Live date**:
+The day a change became visible on the live site (the deploy that shipped it), not the day it was committed or merged. Marked "approx" when only the merge date is known.
+_Avoid_: change date, commit date, deploy date
 
 ## Reviews
 
