@@ -4,6 +4,8 @@ services:
     container_name: domain-overview
     restart: unless-stopped
     env_file: .env
+    environment:
+      SERENITY_REPO_PATH: /repos/serenity  # Serenity's repo_path when the site registry is first seeded (the mount below)
     ports:
       - "8095:8000"
     volumes:
