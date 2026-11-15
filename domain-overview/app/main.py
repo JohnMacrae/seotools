@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, digest, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
+from . import clickstream, compare, crawl, dfs, digest, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -169,6 +169,7 @@ def db() -> sqlite3.Connection:
     mappack.ensure_tables(con)
     supporting.ensure_tables(con)
     digest.ensure_tables(con)
+    clickstream.ensure_tables(con)
     return con
 
 
@@ -1137,15 +1138,16 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
         except ValueError as e:
             raise HTTPException(400, str(e))
         tgts = targets.with_tags(con, targets.list_all(con))
+        cs, cslabel = clickstream.volumes(con), clickstream.label(con)
         all_labels = sorted({lb for t in tgts for lb in rankings.labels(t)})
         tgts = [t for t in tgts if rankings.label_match(rankings.labels(t), labels)]
         if rng is None:
             rows = [{"id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], "labels": rankings.labels(t),
-                     "volume": t.get("volume"), "clicks": 0, "impressions": 0, "top_url": None,
+                     "volume": t.get("volume"), "clickstream_volume": cs.get(t["primary_keyword"].strip().lower()), "clicks": 0, "impressions": 0, "top_url": None,
                      "top_url_off_target": None, "current": None, "start": None, "movement": None, "direction": None,
                      "period_avg": None, "no_data": True, "series": []} for t in tgts]
             return {"first_day": None, "last_day": None, "range": None, "groupings": [], "grouping": None,
-                    "labels": all_labels, "overview": [], "journal": [], "rows": rows if movement == "all" else []}
+                    "clickstream": cslabel, "labels": all_labels, "overview": [], "journal": [], "rows": rows if movement == "all" else []}
         a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
         offered = rankings.groupings(a, b)
         if grouping is None:
@@ -1156,10 +1158,10 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
             "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
             (rng["start"], rng["end"]))]
         marks = journal.in_range(journal.list_entries(con), rng["start"], rng["end"])
-    rep = rankings.report(daily, tgts, a, b, grouping or "day")
+    rep = rankings.report(daily, tgts, a, b, grouping or "day", cs)
     rows = rep["rows"] if movement == "all" else [r for r in rep["rows"] if r["direction"] == movement]
     return {"first_day": st["first_day"], "last_day": st["last_day"], "range": rng, "groupings": offered,
-            "grouping": grouping, "labels": all_labels, "overview": rep["overview"], "journal": marks, "rows": rows}
+            "grouping": grouping, "clickstream": cslabel, "labels": all_labels, "overview": rep["overview"], "journal": marks, "rows": rows}
 
 
 @app.get("/api/rankings/{tid}")
@@ -1170,6 +1172,7 @@ def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping
         if t is None:
             raise HTTPException(404, "No such target")
         t["tags"] = targets.tags_of(con, tid)
+        cs, cslabel = clickstream.volumes(con), clickstream.label(con)
         st = gsc.store_status(con)
         first = dt.date.fromisoformat(st["first_day"]) if st["first_day"] else None
         last = dt.date.fromisoformat(st["last_day"]) if st["last_day"] else None
@@ -1181,7 +1184,8 @@ def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping
             return {"id": tid, "keyword": t["primary_keyword"], "path": t["path"], "labels": rankings.labels(t),
                     "tags": t["tags"], "range": None, "groupings": [], "grouping": None, "series": [], "variants": [], "journal": [],
                     "cards": {"current": None, "start": None, "movement": None, "direction": None, "period_avg": None,
-                              "clicks": 0, "impressions": 0, "no_data": True, "ads_volume": t.get("volume")}}
+                              "clicks": 0, "impressions": 0, "no_data": True, "ads_volume": t.get("volume"),
+                              "clickstream_volume": cs.get(t["primary_keyword"].strip().lower())}, "clickstream": cslabel}
         a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
         offered = rankings.groupings(a, b)
         if grouping is None:
@@ -1192,8 +1196,29 @@ def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping
             "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
             (rng["start"], rng["end"]))]
         marks = journal.in_range(journal.for_page(con, t["path"]), rng["start"], rng["end"])
-    return {**rankings.detail(daily, t, a, b, grouping or "day"), "range": rng, "groupings": offered, "grouping": grouping,
-            "journal": marks}
+    return {**rankings.detail(daily, t, a, b, grouping or "day", cs), "range": rng, "groupings": offered, "grouping": grouping,
+            "journal": marks, "clickstream": cslabel}
+
+
+def _target_keywords(con) -> list[str]:
+    return [t["primary_keyword"] for t in targets.list_all(con)]
+
+
+@app.get("/api/clickstream/estimate")
+def api_clickstream_estimate():
+    """Cost of fetching clickstream volume for target keywords not cached in the last 30 days. Makes no paid call."""
+    with closing(db()) as con:
+        return clickstream.estimate(con, _target_keywords(con))
+
+
+@app.post("/api/clickstream")
+async def api_clickstream_fetch():
+    """Paid: fetch clickstream volume for the keyword targets not cached in the last 30 days."""
+    with closing(db()) as con:
+        try:
+            return await clickstream.fetch(con, _target_keywords(con))
+        except (dfs.DFSError, httpx.HTTPError) as e:
+            raise HTTPException(502, f"DataForSEO: {e}")
 
 
 @app.get("/api/tags")

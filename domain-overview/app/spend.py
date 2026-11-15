@@ -15,6 +15,7 @@ FEATURES = {
     "supporting": ("supporting_runs", ("finished_at", "created_at"), "status='done'"),
     "mappack": ("mappack_runs", ("finished_at", "started_at"), "status='done'"),
     "volumes": ("volume_runs", ("fetched_at",), None),
+    "clickstream": ("clickstream_runs", ("fetched_at",), None),
 }
 
 

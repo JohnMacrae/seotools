@@ -133,7 +133,8 @@ def _variant_rows(daily: list[dict], target: dict) -> list[dict]:
     return [r for r in daily if any(match.same_variant(r["query"], k) for k in kws)]
 
 
-def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date, grouping: str) -> dict:
+def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date, grouping: str,
+           clickstream: dict[str, int] | None = None) -> dict:
     """daily: {date (ISO), query, page, clicks, impressions, position} rows (any dates; only start..end used).
     Returns {rows: one per target, overview: [{start, position}] = mean of the targets' bucket positions}."""
     s, e = start.isoformat(), end.isoformat()
@@ -157,7 +158,8 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
         imps = sum(r["impressions"] for r in vr)
         rows.append({
             "id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], "labels": labels(t),
-            "volume": t.get("volume"), "clicks": sum(r["clicks"] for r in vr), "impressions": imps,
+            "volume": t.get("volume"),
+            "clickstream_volume": (clickstream or {}).get(t["primary_keyword"].strip().lower()), "clicks": sum(r["clicks"] for r in vr), "impressions": imps,
             "top_url": top, "top_url_off_target": None if top is None else _path(top) != _path(t["path"]),
             "current": _r(cur), "start": _r(st), "movement": _r(mv),
             "direction": None if mv is None else "up" if mv > 0 else "down" if mv < 0 else "flat",
@@ -174,10 +176,11 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
     return {"rows": rows, "overview": overview}
 
 
-def detail(daily: list[dict], target: dict, start: dt.date, end: dt.date, grouping: str) -> dict:
+def detail(daily: list[dict], target: dict, start: dt.date, end: dt.date, grouping: str,
+           clickstream: dict[str, int] | None = None) -> dict:
     """One target over the range (#28): cards, series at the grouping and a table of its close-variant queries,
     each with its own impressions, clicks and impression-weighted position (queries differing only in case merge)."""
-    row = report(daily, [target], start, end, grouping)["rows"][0]
+    row = report(daily, [target], start, end, grouping, clickstream)["rows"][0]
     s, e = start.isoformat(), end.isoformat()
     vr = _variant_rows([r for r in daily if s <= r["date"] <= e], target)
     per: dict[str, list] = {}
@@ -188,6 +191,7 @@ def detail(daily: list[dict], target: dict, start: dt.date, end: dt.date, groupi
                       key=lambda v: (-v["impressions"], v["query"]))
     cards = {k: row[k] for k in ("current", "start", "movement", "direction", "period_avg", "clicks", "impressions", "no_data")}
     cards["ads_volume"] = target.get("volume")
+    cards["clickstream_volume"] = row["clickstream_volume"]
     return {"id": target["id"], "keyword": target["primary_keyword"], "path": target["path"], "labels": row["labels"],
             "tags": list(target.get("tags") or []), "cards": cards, "series": row["series"], "variants": variants,
             "top_url": row["top_url"], "top_url_off_target": row["top_url_off_target"]}

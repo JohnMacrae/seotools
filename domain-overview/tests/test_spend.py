@@ -36,9 +36,9 @@ def test_features():
         (ago(days=3), ago(days=2), "error", 0.5),    # errored: ignored for last_at, cost still counted
     ])
     f = spend.features(con, NOW)
-    assert set(f) == {"overview", "compare", "gaps", "plans", "supporting", "mappack", "volumes"}
+    assert set(f) == {"overview", "compare", "gaps", "plans", "supporting", "mappack", "volumes", "clickstream"}
     assert f["overview"] == {"last_at": ago(days=2), "last_cost": 0.25, "total_cost": 0.75, "status": "green"}
     assert f["gaps"]["last_at"] == ago(days=45) and f["gaps"]["status"] == "red"
     assert f["gaps"]["last_cost"] == 1.0 and f["gaps"]["total_cost"] == 1.5
-    for k in ("compare", "plans", "supporting", "mappack", "volumes"):  # missing tables
+    for k in ("compare", "plans", "supporting", "mappack", "volumes", "clickstream"):  # missing tables
         assert f[k] == {"last_at": None, "last_cost": None, "total_cost": 0.0, "status": "never"}
