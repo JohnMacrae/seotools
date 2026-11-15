@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
+from . import compare, crawl, dfs, digest, gsc, health, journal, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -165,6 +165,7 @@ def db() -> sqlite3.Connection:
             con.execute(f"ALTER TABLE suggestions ADD COLUMN {col} {typ}")
     gsc.ensure_tables(con)
     targets.ensure_table(con)
+    journal.ensure_table(con)
     mappack.ensure_tables(con)
     supporting.ensure_tables(con)
     digest.ensure_tables(con)
@@ -468,6 +469,11 @@ def linking_page():
 @app.get("/rankings")
 def rankings_page():
     return FileResponse(STATIC / "rankings.html")
+
+
+@app.get("/journal")
+def journal_page():
+    return FileResponse(STATIC / "journal.html")
 
 
 @app.get("/digest")
@@ -1045,6 +1051,51 @@ def targets_delete(tid: int):
         if not targets.delete(con, tid):
             raise HTTPException(404, "No such target")
     return {"deleted": tid}
+
+
+@app.get("/api/journal")
+def journal_list():
+    with closing(db()) as con:
+        return {"entries": journal.list_entries(con)}
+
+
+@app.post("/api/journal")
+def journal_create(body: dict):
+    with closing(db()) as con:
+        try:
+            return journal.create(con, body)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except KeyError:
+            raise HTTPException(409, "An entry with that ref and page already exists")
+
+
+@app.put("/api/journal/{eid}")
+def journal_update(eid: int, body: dict):
+    with closing(db()) as con:
+        try:
+            e = journal.update(con, eid, body)
+        except ValueError as ex:
+            raise HTTPException(400, str(ex))
+        except KeyError:
+            raise HTTPException(409, "An entry with that ref and page already exists")
+        except PermissionError:
+            raise HTTPException(403, "Repo entries are read-only")
+    if e is None:
+        raise HTTPException(404, "No such entry")
+    return e
+
+
+@app.delete("/api/journal/{eid}")
+def journal_delete(eid: int):
+    with closing(db()) as con:
+        try:
+            ok = journal.delete(con, eid)
+        except PermissionError:
+            raise HTTPException(403, "Repo entries are read-only")
+    if not ok:
+        raise HTTPException(404, "No such entry")
+    return {"deleted": eid}
 
 
 @app.get("/api/rankings")

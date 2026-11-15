@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal</title>
+<style>
+  :root { --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; overflow-x: auto; }
+  input, button, select { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--card); color: var(--ink); }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: var(--card); color: var(--ink); border-color: var(--line); }
+  button.del { background: var(--card); color: var(--bad); border-color: var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  td input { width: 100%; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .bar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .bar label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; background: var(--subtle); color: var(--muted); border: 1px solid var(--line); }
+  code { background: var(--subtle); padding: 0 4px; border-radius: 4px; }
+  td.btns { white-space: nowrap; } td.btns button { padding: 2px 8px; font-size: 12px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="rankings">Rankings</a><a href="journal" class="on">Journal</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a></nav></div>
+</header>
+<main>
+  <div id="err"></div>
+  <div class="card">
+    <h2>Add a manual entry</h2>
+    <form class="bar" id="add">
+      <label>Live date <input type="date" name="live_date" required></label>
+      <label>&nbsp;<span><input type="checkbox" name="approx"> approx</span></label>
+      <label>Page or pattern <input name="page" placeholder="/dresses/*" size="26" required></label>
+      <label>Change type <input name="change_type" placeholder="title, content, backlink, gbp" size="18" required></label>
+      <label>Note <input name="note" size="34"></label>
+      <label>Ref <input name="ref" placeholder="optional" size="12"></label>
+      <button type="submit">Add</button>
+    </form>
+    <div class="sub" style="margin-top:6px">A pattern may use <code>*</code> as a wildcard, e.g. <code>/dresses/*</code> covers every page under /dresses. Repo entries come from commit trailers and are read-only.</div>
+  </div>
+  <div class="card"><div id="tbl"></div></div>
+</main>
+<script src="spendlight.js"></script>
+<script src="sitemenu.js"></script>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+let entries = [], editing = null;
+
+async function call(method, url, body) {
+  $("err").innerHTML = "";
+  const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { $("err").innerHTML = `<div class="err">${esc(j.detail || r.status)}</div>`; return null; }
+  return j;
+}
+async function load() {
+  const j = await call("GET", "api/journal");
+  if (j) { entries = j.entries; draw(); }
+}
+function row(e) {
+  if (editing === e.id) {
+    return `<tr data-id="${e.id}"><td><input type="date" data-f="live_date" value="${esc(e.live_date)}"></td>
+      <td><input type="checkbox" data-f="approx" ${e.approx ? "checked" : ""}></td>
+      <td><input data-f="page" value="${esc(e.page)}"></td><td><input data-f="change_type" value="${esc(e.change_type)}"></td>
+      <td><input data-f="note" value="${esc(e.note)}"></td><td><span class="badge">manual</span></td>
+      <td><input data-f="ref" value="${esc(e.ref)}"></td>
+      <td class="btns"><button data-act="save">Save</button> <button class="ghost" data-act="cancel">Cancel</button></td></tr>`;
+  }
+  const manual = e.source === "manual";
+  return `<tr data-id="${e.id}"><td>${esc(e.live_date)}</td><td>${e.approx ? "approx" : ""}</td><td><code>${esc(e.page)}</code></td>
+    <td>${esc(e.change_type)}</td><td>${esc(e.note)}</td><td><span class="badge">${esc(e.source)}</span></td>
+    <td class="sub">${manual && e.ref.startsWith("manual-") ? "" : esc(e.ref)}</td>
+    <td class="btns">${manual ? `<button class="ghost" data-act="edit">Edit</button> <button class="del" data-act="del">Delete</button>` : ""}</td></tr>`;
+}
+function draw() {
+  $("tbl").innerHTML = entries.length
+    ? `<table><thead><tr><th>Live date</th><th></th><th>Page / pattern</th><th>Change</th><th>Note</th><th>Source</th><th>Ref</th><th></th></tr></thead><tbody>${entries.map(row).join("")}</tbody></table>`
+    : `<div class="sub">No journal entries yet.</div>`;
+}
+$("tbl").addEventListener("click", async ev => {
+  const b = ev.target.closest("button[data-act]"); if (!b) return;
+  const tr = b.closest("tr"), id = +tr.dataset.id;
+  if (b.dataset.act === "edit") { editing = id; draw(); }
+  else if (b.dataset.act === "cancel") { editing = null; draw(); }
+  else if (b.dataset.act === "del") { if (confirm("Delete this entry?") && await call("DELETE", "api/journal/" + id)) load(); }
+  else if (b.dataset.act === "save") {
+    const body = {};
+    tr.querySelectorAll("[data-f]").forEach(i => body[i.dataset.f] = i.type === "checkbox" ? i.checked : i.value);
+    if (await call("PUT", "api/journal/" + id, body)) { editing = null; load(); }
+  }
+});
+$("add").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const f = ev.target, body = {};
+  new FormData(f).forEach((v, k) => body[k] = v);
+  body.approx = f.approx.checked;
+  if (await call("POST", "api/journal", body)) { f.reset(); load(); }
+});
+load();
+</script>
+</body>
+</html>
