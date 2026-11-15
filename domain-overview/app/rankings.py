@@ -52,7 +52,8 @@ def resolve_range(preset: str, first_day: dt.date | None, last_day: dt.date | No
     return {"preset": preset, "start": max(start, first_day).isoformat(), "end": end.isoformat(), "clamped": clamped}
 
 
-def _bucket(d: dt.date, grouping: str) -> dt.date:
+def bucket(d: dt.date, grouping: str) -> dt.date:
+    """Start of the graph point (day, week or month) that holds day d."""
     if grouping == "week":
         return d - dt.timedelta(days=d.weekday())
     if grouping == "month":
@@ -63,7 +64,7 @@ def _bucket(d: dt.date, grouping: str) -> dt.date:
 def buckets(start: dt.date, end: dt.date, grouping: str) -> list[dt.date]:
     out, d = [], start
     while d <= end:
-        b = _bucket(d, grouping)
+        b = bucket(d, grouping)
         if not out or out[-1] != b:
             out.append(b)
         d += dt.timedelta(days=1)
@@ -154,7 +155,7 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
         mv = None if cur is None or st is None else st - cur
         per: dict[dt.date, list] = {}
         for r in vr:
-            per.setdefault(_bucket(dt.date.fromisoformat(r["date"]), grouping), []).append(r)
+            per.setdefault(bucket(dt.date.fromisoformat(r["date"]), grouping), []).append(r)
         imps = sum(r["impressions"] for r in vr)
         rows.append({
             "id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], "labels": labels(t),
