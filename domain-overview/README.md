@@ -6,6 +6,8 @@ Panels: organic keywords (with new/up/down/lost movement), estimated traffic and
 a 12-month trend, ranking-position distribution, top organic keywords, top pages, main organic
 competitors and a competitive positioning map.
 
+All pages follow the OS light/dark setting (`prefers-color-scheme`); there is no manual toggle.
+
 Every lookup is saved as a dated snapshot in SQLite (`./data/overview.db`). A repeat lookup
 within `CACHE_DAYS` is served from the cache for free; "Refresh (paid)" forces a new fetch.
 Past snapshots can be picked from the dropdown.
@@ -29,6 +31,25 @@ Compare your domain with up to 3 competitors and see whether the gap is **on-pag
 Competitor suggestions come from your latest Domain overview of the same domain. Results are cached for `CACHE_DAYS`.
 A fresh comparison of 3 competitors makes about 15 DataForSEO calls; the cost is shown on the page.
 
+## Internal linking (`/linking`)
+
+A free, self-hosted crawler for your own site. "Crawl now" fetches the homepage and every sitemap URL (via `robots.txt`
+`Sitemap:` lines, falling back to `/sitemap.xml`), follows internal links breadth-first (4 at a time, 0.25s polite delay,
+respects `robots.txt`), and stores every page plus every internal link with its placement (nav, header, footer, aside, main
+or body). Redirects are recorded, not followed silently. Crawls are capped by `CRAWL_MAX_PAGES` (default 2000) and cost nothing.
+
+The **Health** tab shows orphans, contextual orphans (linked only from nav/footer), broken and redirected internal links,
+dead ends, non-indexable pages, title/H1/description problems, click depth and pages by section. Results are linkable with `?crawl=ID`.
+Other tabs (strength, topic map, template rules, to-dos) are placeholders for later work.
+
+Tests (no host Python needed; installs `requirements-dev.txt` in a throwaway python:3.12 container and runs all of `tests/`; `--build` rebuilds the image when `Dockerfile.tests` changes, cached otherwise):
+
+```
+cd domain-overview && docker compose run --build --rm tests
+```
+
+Once per clone, enable the pre-commit hook that runs these tests: `git config core.hooksPath .githooks`
+
 ## Deploy on dnas
 
 ```bash
@@ -39,6 +60,20 @@ docker compose up -d --build
 ```
 
 Open http://dnas:8095 (or over Tailscale at http://100.98.167.107:8095).
+Pages (source in `app/static/*.html`; one bullet per page, so stacked branches merge cleanly):
+
+- `/` overview
+- `/compare`
+- `/linking`
+- `/targets`: **Link map** tab shows each keyword target's contextual, planned and template links with flags (`GET /api/linkmap[?crawl=ID]`). Each card also has an **On-page** line: the primary keyword (close variant, up to 2 extra words between its words) in the title, URL path (wedding/dress/bridal count as covered; home page not checked), H1 and first sentence of the body copy; misses add a `keyword missing: …` flag. Line hubs (`/collections/<line>`) never get `not in plan`.
+- `/mappack`
+- `/journal` (SEO change log, newest first; add/edit/delete manual entries; change type from `journal.CHANGE_TYPES` (glossary list plus backlinks, GBP), sent as `change_types`; repo entries read-only, read from the site repo by the 06:00 job after the Search Console top-up (`app/journal_repo.py`) or on demand with `POST /api/journal/sync` (returns `entries`, `removed`; `prune_skipped` when a read finds nothing, so stored entries are kept; `unknown_types` for trailer types not in `journal.CHANGE_TYPES`); `GET/POST /api/journal`, `PUT/DELETE /api/journal/{id}`; page patterns use `*` wildcards, see `journal.matches`)
+- `/rankings` (overview graph of mean target position with gaps, range presets, interval (day/week/month), label checkboxes (OR within a kind, AND across kinds); table of current position, movement arrows, period average, Ads volume (labelled source and date; stays the sort key), DataForSEO clickstream volume (labelled source and oldest cached fetch date; `DFS_MOCK=1` reads `app/mock/clickstream_volume.json`; keywords missing from a response are not cached; **Fetch clickstream (paid)** confirms an estimated cost first, cached 30 days per keyword, has a spend light; `GET /api/clickstream/estimate`, `POST /api/clickstream`, `app/clickstream.py`), clicks, top URL; sorts and up/down filter; backed by `GET /api/rankings`; journal entries in range are returned as `journal`, each with `bucket` (start of the graph point it sits on), and drawn as dashed vertical markers on the graph (red exact date, amber approximate); click a row for the detail view: cards, series, close-variant table, editable free tags; impressions and clicks carry their source and as-of date (`gsc`); an open detail follows range and interval changes, and markers for the journal entries whose page or pattern matches the target path, from `GET /api/rankings/{id}` `journal`)
+- `/digest` (weekly review: page-2 queries, low-CTR page-1 queries and decaying pages from Search Console; page groups collapse, columns sort on header click; By page / Top opportunities view (all queries by clicks lost); All / Booking / Sales intent filter; Fetch volumes (paid, DataForSEO search volume, cached 30 days, only new or stale queries requested); Refresh re-fetches)
+
+After `up -d --build`, wait for the container to answer before checking pages.
+
+Spend lights: every paid control (overview Analyse/Refresh, competitor gap Compare/Refresh, Find page gaps, Build link plan, supporting-page review, map pack Run check now, digest Fetch volumes, rankings Fetch clickstream) shows a dot and its last refresh date: green when the data is 30 days old or less, red when older, grey when never run (`STALE_DAYS` in `app/spend.py`).
 To put it behind the Pi's Caddy, add a site block that reverse-proxies to `100.98.167.107:8095`.
 
 Try it without credits first: set `DFS_MOCK=1` in `.env` and restart.
@@ -54,6 +89,13 @@ next to the snapshot and the running total is on the home page.
 - `GET /api/overview?domain=example.com&location=2826&language=en[&refresh=1][&snapshot=ID]`
 - `GET /api/history?domain=example.com&location=2826`
 - `GET /api/recent`
+- `POST /api/crawl?domain=example.com` (409 if one is running), `GET /api/crawl/ID`, `GET /api/crawls?domain=`, `GET /api/crawl/ID/health`
+- `GET /api/digest[?refresh=1]` (JSON backing the `/digest` page)
+- `POST /api/digest/volumes` (paid: fetch search volume for digest queries not cached in the last 30 days)
+- `GET /api/gsc/store` (daily Search Console store for the active site: `first_day` = site's first data day, `last_day`, `rows`); `POST /api/gsc/store/sync` (free: backfills ~16 months on first run, then tops up from the last stored day to today minus 3)
+- `GET /api/rankings?range=all|12m|6m|3m|30d|12w|7d&grouping=day|week|month&labels=line:bridal&labels=phase:1&movement=all|up|down` (one row per keyword target from the daily store, close variants rolled up: `current` = impression-weighted position over the last 7 data days, `start` = first 7 data days of the range, `movement` = start − current (positive = up), `period_avg`, `clicks`, `top_url` + `top_url_off_target`, `series`; `overview` = mean target position per bucket, gaps as `null`; `range` is clamped to the first data day; `groupings` lists those giving ≥2 points; labels `line:`, `phase:`, `topic:` (target `topic` field), `folder:`, `tag:` (free tags) are OR within a kind, AND across kinds)
+- `GET /api/rankings/{target_id}?range=&grouping=` (detail: `cards` {current, start, movement, direction, period_avg, clicks, impressions, ads_volume}, `series`, `variants` [{query, impressions, clicks, position}], `tags`); `GET /api/tags` (site's tags); `POST /api/targets/{id}/tags` `{tag}` and `DELETE /api/targets/{id}/tags/{tag}` (case-insensitive, no duplicates; return the target's `tags`)
+- `GET /api/spend-status` (last refresh date, last cost, total cost and green/red/never status per paid feature)
 - `GET /healthz`
 
 Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.
@@ -63,3 +105,35 @@ Location codes: 2826 UK, 2840 US, 2372 Ireland, 2036 Australia, 2124 Canada.
 - The protocol and `www.` are removed from input, so a pasted URL works.
 - Ranking-change arrows compare against DataForSEO's previous absolute rank, so treat them as indicative.
 - The competitor list excludes giant sites (Amazon, Wikipedia and similar) via `exclude_top_domains`.
+
+## Supporting-page review
+
+On the `/targets` Link map tab, "Run supporting-page review" asks the model, for each phase-1 bridal keyword target (template
+targets per designer page), which indexable pages a reader would naturally go on to the target page from, then finds the
+sentence and anchor (a target keyword or close variant) on each, or drafts one sentence. Proposals are stored in
+`supporting_pages`; Approve / Reject them on the card. Re-runs only add or refresh `proposed` rows and never resurrect
+decided ones. Pages that already link the target anywhere (pills, related-reading blocks, breadcrumbs) are skipped by the review and by the planner (every suggestion kind: supporting, boost, route, wrong page); links on more than half the site (the menu) don't count (`linkgraph.linked_pairs`). The link plan proposes approved supporting links first. `POST /api/crawl/ID/supporting` (409 if running),
+`GET /api/supporting/run/ID` (status), `GET /api/supporting?crawl=ID&status=` (all rows), and
+`POST /api/supporting/ROW_ID` with `{"status": "approved"|"rejected"|"proposed"}` and/or edited `anchor`, `sentence`, `in_text`.
+
+## Monthly map pack check
+
+`/mappack` checks Google (Colchester) for every stored keyword target (primary + supporting) and records our and the
+competitor's map pack rank, rating and organic position/URL per keyword, with run history and DataForSEO spend per run.
+`POST /api/mappack/run` starts a run (`?limit=N` checks only the first N keywords); `GET /api/mappack/runs` and
+`GET /api/mappack/runs/ID` read them. Organic URLs come from `website_name`/`breadcrumb` because DataForSEO returns a
+Google redirect; a URL rebuilt from a truncated breadcrumb is approximate (the domain is always right).
+
+Monthly schedule (host crontab, 06:00 on the 1st; not installed by default):
+
+```
+0 6 1 * * curl -fsS -X POST http://localhost:8095/api/mappack/run >/dev/null
+```
+
+## Sites
+
+Each site has its own SQLite file in `data/sites/<slug>.db`; the registry is `data/sites.json` (slug, name, Search Console property, repo path, DataForSEO location). The header site menu (`/sitemenu.js`) switches site via `?site=<slug>` (stored in a cookie) and can add one (`POST /api/sites`). On first start the old `data/overview.db` is copied to `data/sites/serenity.db` (the original is left in place). Background jobs keep the site they started on. Search Console reads the active site property (`GSC_SITE_URL` is only a fallback).
+
+## Daily job
+
+An in-app scheduler runs at 06:00 Europe/London for every site: Search Console top-up into `gsc_query_daily` (date × query × page, every query). One site failing doesn't stop the others; the result is printed to the container log.

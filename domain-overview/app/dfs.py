@@ -38,8 +38,10 @@ async def _post(client: httpx.AsyncClient, endpoint: str, task: dict) -> tuple[d
     return await post_path(client, f"dataforseo_labs/google/{endpoint}/live", task, mock_name=endpoint)
 
 
-async def post_path(client: httpx.AsyncClient, path: str, task: dict, mock_name: str | None = None) -> tuple[dict | None, float]:
-    """POST one task to any v3 path (e.g. 'backlinks/summary/live'). Returns (result[0] or None, cost)."""
+async def post_path(client: httpx.AsyncClient, path: str, task: dict, mock_name: str | None = None,
+                    all_results: bool = False) -> tuple[dict | None, float]:
+    """POST one task to any v3 path (e.g. 'backlinks/summary/live'). Returns (result[0] or None, cost).
+    all_results=True returns the whole result list instead of result[0] (e.g. search_volume, one item per keyword)."""
     if MOCK:
         return _mock(mock_name or path.replace("/", "_")), 0.0
     async with _SEM:
@@ -51,7 +53,7 @@ async def post_path(client: httpx.AsyncClient, path: str, task: dict, mock_name:
     t = (body.get("tasks") or [{}])[0]
     if t.get("status_code") != 20000:
         raise DFSError(f"{path}: {t.get('status_message')}")
-    res = (t.get("result") or [None])[0]
+    res = (t.get("result") or []) if all_results else (t.get("result") or [None])[0]
     return res, float(body.get("cost") or 0)
 
 

@@ -1,0 +1,3 @@
+# One SQLite database per site, chosen from a site menu
+
+The tools are moving from serving only serenitybrides.com to serving several sites, but they are always worked on one site at a time. So each site gets its own database file (`data/sites/<site>.db`), and an app-wide site menu chooses which one is active. We rejected adding a site column to shared tables: that would mean migrating every table and filtering every query, and one missed filter would leak one site's data into another's. Existing tables carry over unchanged. Cross-site views (comparing sites side by side) would need to read several files, which we accept because nobody has asked for them.

@@ -6,6 +6,7 @@ Self-hosted SEO tools for dnas.
 |---|---|---|
 | Domain Overview (Semrush-style, DataForSEO) | `domain-overview/` → http://dnas:8095 | 8095 |
 | Competitor gap (on-page vs off-page) | same app → http://dnas:8095/compare | 8095 |
+| Internal linking crawler + site health | same app → http://dnas:8095/linking | 8095 |
 
 ## Install on dnas
 

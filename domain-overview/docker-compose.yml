@@ -4,7 +4,27 @@ services:
     container_name: domain-overview
     restart: unless-stopped
     env_file: .env
+    environment:
+      SERENITY_REPO_PATH: /repos/sweb-live  # Serenity's repo_path when the site registry is first seeded (the mount below)
     ports:
       - "8095:8000"
     volumes:
       - ./data:/data
+      - ../docs:/docs:ro
+      - /volume1/docker/serenity/sweb-live/data/bl/ga4-service-account.json:/secrets/gsc-key.json:ro
+      # Site repos, read-only, for the journal repo reader (#30); a site's repo_path is the container path
+      - /volume1/docker/serenity/sweb-live:/repos/sweb-live:ro
+
+  # Test runner: `docker compose run --rm tests` (not started by `up`)
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    profiles: ["test"]
+    working_dir: /srv
+    volumes:
+      - .:/srv
+      - ../docs:/docs:ro
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: sh -c "pip install -q --root-user-action=ignore -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider tests"
