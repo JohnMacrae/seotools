@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Merge a stack of PRs in order into one target branch, with merge commits.
+#   scripts/merge-stack <target-branch> <PR> [<PR> ...]      e.g. scripts/merge-stack main 35 36 37
+# For each PR: point its base at <target> (REST: `gh pr edit --base` fails on this repo, Projects classic),
+# re-read the base to confirm, mark ready, merge with a merge commit, confirm MERGED. Stops on the first failure.
+# Head branches are deleted only with --delete, and only when the head commit is an ancestor of <target>.
+set -euo pipefail
+
+delete=0
+if [[ "${1:-}" == "--delete" ]]; then delete=1; shift; fi
+target="${1:?usage: merge-stack [--delete] <target-branch> <PR>...}"; shift
+(( $# )) || { echo "no PRs given" >&2; exit 2; }
+repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+
+for pr in "$@"; do
+  state="$(gh pr view "$pr" --json state --jq .state)"
+  [[ "$state" == OPEN ]] || { echo "#$pr is $state, not OPEN; stopping" >&2; exit 1; }
+  gh api -X PATCH "repos/$repo/pulls/$pr" -f base="$target" --jq .base.ref >/dev/null
+  base="$(gh api "repos/$repo/pulls/$pr" --jq .base.ref)"
+  [[ "$base" == "$target" ]] || { echo "#$pr base is $base, wanted $target; stopping" >&2; exit 1; }
+  if [[ "$(gh pr view "$pr" --json isDraft --jq .isDraft)" == true ]]; then gh pr ready "$pr" >/dev/null; fi
+  gh pr merge "$pr" --merge >/dev/null
+  state="$(gh pr view "$pr" --json state --jq .state)"
+  [[ "$state" == MERGED ]] || { echo "#$pr is $state after merge; stopping" >&2; exit 1; }
+  echo "#$pr merged into $target"
+done
+
+git fetch -q origin "$target"
+for pr in "$@"; do
+  read -r head sha < <(gh pr view "$pr" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"')
+  git fetch -q origin "$sha" 2>/dev/null || true
+  if git merge-base --is-ancestor "$sha" "origin/$target"; then
+    if (( delete )); then git push -q origin --delete "$head" && echo "deleted $head (in $target)"; else echo "$head is in $target"; fi
+  else
+    echo "WARNING: #$pr head $sha is NOT in $target; $head kept" >&2
+  fi
+done

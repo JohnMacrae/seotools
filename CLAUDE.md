@@ -14,4 +14,8 @@ Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agen
 
 ### UI checks
 
-Rendered-page checks on http://localhost:8095 use the shared headless Chrome (`jev-ultrafast` skill, CDP on 127.0.0.1:9223, reaches localhost). Reading the DOM (titles, counts): `Runtime.evaluate` over CDP with the jev clone's `.venv` python. Clicking through flows (run a lookup, open a crawl): the jev Agent. Page routes: `domain-overview/README.md`.
+Rendered-page checks on http://localhost:8095 use the shared headless Chrome (`jev-ultrafast` skill, CDP on 127.0.0.1:9223, reaches localhost). Reading the DOM (titles, counts): `scripts/cdp-eval <url> '<js>'`. Clicking through flows (run a lookup, open a crawl): the jev Agent. Page routes: `domain-overview/README.md`.
+
+### Merging PR stacks
+
+`scripts/merge-stack [--delete] <target> <PR>...` merges in order with merge commits and checks each step; it deletes a head branch only once its commit is in the target. Use it for any multi-PR merge.
