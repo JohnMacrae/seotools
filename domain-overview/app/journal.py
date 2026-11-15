@@ -15,9 +15,14 @@ CHANGE_TYPES = ("new page", "copy", "headings", "title/meta", "internal links", 
 AUTO_REF = "manual-"  # prefix of the ref generated for a manual entry added without one
 
 
+def _type_key(s: str) -> str:
+    return s.strip().lower().replace(" ", "-").replace("/", "-")
+
+
 def canonical_type(kind: str) -> str | None:
-    """The listed spelling of a change type, matched ignoring case; None when it isn't on the list."""
-    return next((t for t in CHANGE_TYPES if t.lower() == kind.strip().lower()), None)
+    """The listed spelling of a change type, matched ignoring case and hyphens; None when it isn't on the list."""
+    key = _type_key(kind)
+    return next((t for t in CHANGE_TYPES if _type_key(t) == key), None)
 
 
 class DuplicateEntry(Exception):

@@ -30,8 +30,8 @@ def _months_back(d: dt.date, n: int) -> dt.date:
     """Same day n months earlier (clamped to month end), plus one day: the start of an n-month range ending on d."""
     y, m = divmod(d.year * 12 + d.month - 1 - n, 12)
     m += 1
-    nxt = dt.date(y + (m == 12), m % 12 + 1, 1)
-    return min(dt.date(y, m, d.day), nxt - dt.timedelta(days=1)) + dt.timedelta(days=1)
+    last = dt.date(y + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1)
+    return dt.date(y, m, min(d.day, last.day)) + dt.timedelta(days=1)
 
 
 def resolve_range(preset: str, first_day: dt.date | None, last_day: dt.date | None) -> dict | None:
