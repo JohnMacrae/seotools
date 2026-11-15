@@ -123,8 +123,8 @@ def test_resync_never_duplicates_and_approx_becomes_tagged(repo):
     repo.commit("init")
     repo.commit("A" + trailers("/a", "copy | one"), date="2026-10-01T09:00:00+00:00")
     c = con()
-    assert journal_repo.sync(c, repo.path) == {"entries": 1}
-    assert journal_repo.sync(c, repo.path) == {"entries": 1}
+    assert journal_repo.sync(c, repo.path)["entries"] == 1
+    assert journal_repo.sync(c, repo.path)["entries"] == 1
     [r] = rows(c)
     assert r["approx"] == 1 and r["live_date"] == "2026-10-01"
     repo.tag("live/2026-10-06")
@@ -141,6 +141,42 @@ def test_sync_leaves_manual_entries_alone(repo):
     journal_repo.sync(c, repo.path)
     journal_repo.sync(c, repo.path)
     assert sorted(r["source"] for r in rows(c)) == ["manual", "repo"]
+
+
+def test_empty_read_keeps_stored_repo_entries(repo, tmp_path):
+    repo.commit("A" + trailers("/a", "copy | one"))
+    c = con()
+    journal_repo.sync(c, repo.path)
+    (tmp_path / "bare").mkdir()
+    empty = Repo(tmp_path / "bare")  # e.g. a mount with history but no trailers left in it
+    empty.commit("init")
+    res = journal_repo.sync(c, empty.path)
+    assert res["entries"] == 0 and res["removed"] == 0 and "prune_skipped" in res
+    assert [r["page"] for r in rows(c)] == ["/a"]
+
+
+def test_change_types_match_the_journal_list(repo):
+    repo.commit("A" + trailers("/a", "Title/Meta | caps"))
+    repo.commit("B" + trailers("/b", "gbp | profile"))
+    repo.commit("C" + trailers("/c", "contnet | typo"))
+    got = {e["page"]: e["change_type"] for e in journal_repo.read(repo.path)}
+    assert got == {"/a": "title/meta", "/b": "GBP", "/c": "contnet"}
+    res = journal_repo.sync(con(), repo.path)
+    assert res["unknown_types"] == ["contnet"]
+
+
+def test_every_seo_change_trailer_is_kept(repo):
+    repo.commit("Two changes\n\nSEO-Page: /a\nSEO-Change: copy | longer intro\nSEO-Change: headings | new H2s")
+    [e] = journal_repo.read(repo.path)
+    assert e["change_type"] == "copy, headings" and e["note"] == "longer intro; new H2s"
+
+
+def test_merge_date_is_the_london_date(repo):
+    repo.commit("init", date="2026-09-01T10:00:00+00:00")
+    # 23:30 UTC on 25 Sep is 00:30 BST on 26 Sep
+    repo.commit("Late" + trailers("/late", "copy | late"), date="2026-09-25T23:30:00+00:00")
+    [e] = journal_repo.read(repo.path)
+    assert e["live_date"] == "2026-09-26" and e["approx"] == 1
 
 
 def test_not_a_repo_raises(tmp_path):
