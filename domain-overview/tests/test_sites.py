@@ -122,8 +122,8 @@ def test_every_page_loads_the_site_menu(client, route):
 
 
 def test_serenity_repo_path_seeded_from_environment(tmp_path, monkeypatch):
-    monkeypatch.setenv("SERENITY_REPO_PATH", "/repos/serenity")
+    monkeypatch.setenv("SERENITY_REPO_PATH", "/repos/sweb-live")
     monkeypatch.setattr(main, "DB_PATH", tmp_path / "overview.db")
     with TestClient(main.app) as c:
         [s] = c.get("/api/sites").json()["sites"]
-    assert s["slug"] == "serenity" and s["repo_path"] == "/repos/serenity"
+    assert s["slug"] == "serenity" and s["repo_path"] == "/repos/sweb-live"
