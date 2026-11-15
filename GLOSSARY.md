@@ -96,7 +96,7 @@ A website the rank tracker covers, with its own Search Console property, keyword
 _Avoid_: property (that is Search Console's term), domain, project
 
 **Journal entry**:
-A record that a page, or every page matching a URL pattern (a template change), changed on a site: the live date, the page or pattern, a change type (new page, copy, headings, title/meta, internal links, technical) and a one-line note. It comes from the site's repo or is added by hand for changes made off-site.
+A record that a page, or every page matching a URL pattern (a template change), changed on a site: the live date, the page or pattern, a change type (new page, copy, headings, title/meta, internal links, technical; off-site: backlinks, GBP) and a one-line note. It comes from the site's repo or is added by hand for changes made off-site.
 _Avoid_: log, change note, annotation
 
 **Live date**:

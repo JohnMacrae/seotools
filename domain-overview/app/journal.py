@@ -10,8 +10,13 @@ import sqlite3
 import uuid
 from urllib.parse import urlsplit
 
-SOURCES = ("repo", "manual")
-EDITABLE = ("live_date", "approx", "page", "change_type", "note", "ref")
+# GLOSSARY.md "Journal entry" change types, plus the off-site kinds manual entries record.
+CHANGE_TYPES = ("new page", "copy", "headings", "title/meta", "internal links", "technical", "backlinks", "GBP")
+AUTO_REF = "manual-"  # prefix of the ref generated for a manual entry added without one
+
+
+class DuplicateEntry(Exception):
+    """An entry with the same source, ref and page already exists."""
 
 
 def ensure_table(con: sqlite3.Connection) -> None:
@@ -34,6 +39,8 @@ def _path(page: str) -> str:
     if "://" in page:
         page = urlsplit(page).path
     page = page.split("?")[0].split("#")[0]
+    if not page.startswith(("/", "*")):
+        page = "/" + page
     return (re.sub(r"/{2,}", "/", page).rstrip("/") or "/").lower()
 
 
@@ -60,6 +67,8 @@ def _clean(body: dict, partial: bool) -> dict:
             dt.date.fromisoformat(out["live_date"])
         except ValueError:
             raise ValueError("live_date must be YYYY-MM-DD")
+    if "change_type" in out and out["change_type"] not in CHANGE_TYPES:
+        raise ValueError(f"change_type must be one of: {', '.join(CHANGE_TYPES)}")
     if "approx" in body:
         out["approx"] = 1 if body["approx"] else 0
     for k in ("note", "ref"):
@@ -68,14 +77,29 @@ def _clean(body: dict, partial: bool) -> dict:
     return out
 
 
+def _entry(r: sqlite3.Row) -> dict:
+    e = dict(r)
+    e["editable"] = e["source"] == "manual"
+    e["auto_ref"] = e["editable"] and e["ref"].startswith(AUTO_REF)
+    return e
+
+
 def list_entries(con: sqlite3.Connection) -> list[dict]:
     rows = con.execute("SELECT * FROM journal ORDER BY live_date DESC, id DESC").fetchall()
-    return [dict(r) for r in rows]
+    return [_entry(r) for r in rows]
 
 
 def get(con: sqlite3.Connection, eid: int) -> dict | None:
     r = con.execute("SELECT * FROM journal WHERE id=?", (eid,)).fetchone()
-    return dict(r) if r else None
+    return _entry(r) if r else None
+
+
+def _editable(con: sqlite3.Connection, eid: int) -> dict | None:
+    """The entry if it exists; PermissionError for repo entries (only manual entries change here)."""
+    cur = get(con, eid)
+    if cur is not None and not cur["editable"]:
+        raise PermissionError
+    return cur
 
 
 def insert(con: sqlite3.Connection, e: dict) -> int | None:
@@ -89,46 +113,42 @@ def insert(con: sqlite3.Connection, e: dict) -> int | None:
 
 
 def create(con: sqlite3.Connection, body: dict) -> dict:
-    """Create a manual entry. Raises ValueError (bad input) or KeyError (duplicate)."""
+    """Create a manual entry. Raises ValueError (bad input) or DuplicateEntry."""
     if body.get("source", "manual") != "manual":
         raise ValueError("only manual entries can be created here")
     e = _clean(body, False)
-    e["ref"] = e.get("ref") or f"manual-{uuid.uuid4().hex[:12]}"
+    e["ref"] = e.get("ref") or f"{AUTO_REF}{uuid.uuid4().hex[:12]}"
     e["source"] = "manual"
     eid = insert(con, e)
     if eid is None:
-        raise KeyError("duplicate")
+        raise DuplicateEntry
     con.commit()
     return get(con, eid)
 
 
 def update(con: sqlite3.Connection, eid: int, body: dict) -> dict | None:
-    """Update a manual entry. None if missing; PermissionError for repo entries; ValueError/KeyError as create."""
-    cur = get(con, eid)
+    """Update a manual entry. None if missing; PermissionError for repo entries; ValueError/DuplicateEntry as create.
+    A blank ref goes back to an automatic one."""
+    cur = _editable(con, eid)
     if cur is None:
         return None
-    if cur["source"] != "manual":
-        raise PermissionError
     e = _clean(body, True)
     if "ref" in e and not e["ref"]:
-        e["ref"] = cur["ref"]
+        e["ref"] = cur["ref"] if cur["auto_ref"] else f"{AUTO_REF}{uuid.uuid4().hex[:12]}"
     if e:
         sets = ", ".join(f"{k}=?" for k in e)
         try:
             con.execute(f"UPDATE journal SET {sets} WHERE id=?", (*e.values(), eid))
         except sqlite3.IntegrityError:
-            raise KeyError("duplicate")
+            raise DuplicateEntry
         con.commit()
     return get(con, eid)
 
 
-def delete(con: sqlite3.Connection, eid: int) -> bool | None:
+def delete(con: sqlite3.Connection, eid: int) -> bool:
     """True deleted, False missing; PermissionError for repo entries."""
-    cur = get(con, eid)
-    if cur is None:
+    if _editable(con, eid) is None:
         return False
-    if cur["source"] != "manual":
-        raise PermissionError
     con.execute("DELETE FROM journal WHERE id=?", (eid,))
     con.commit()
     return True
