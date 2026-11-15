@@ -8,7 +8,8 @@ from __future__ import annotations
 import json
 import re
 
-FIELDS = ("path", "primary_keyword", "supporting", "volume", "win_basis", "phase", "product_line", "is_new")
+FIELDS = ("path", "primary_keyword", "supporting", "volume", "win_basis", "phase", "product_line", "is_new", "topic")
+SEED_FIELDS = FIELDS[:-1]  # topic is set by hand, never from the doc
 
 
 def ensure_table(con) -> None:
@@ -24,8 +25,11 @@ def ensure_table(con) -> None:
             phase INTEGER NOT NULL DEFAULT 1,
             product_line TEXT NOT NULL DEFAULT 'bridal',
             is_new INTEGER NOT NULL DEFAULT 0,
-            edited INTEGER NOT NULL DEFAULT 0)"""
+            edited INTEGER NOT NULL DEFAULT 0,
+            topic TEXT NOT NULL DEFAULT '')"""
     )
+    if "topic" not in {r[1] for r in con.execute("PRAGMA table_info(keyword_targets)")}:
+        con.execute("ALTER TABLE keyword_targets ADD COLUMN topic TEXT NOT NULL DEFAULT ''")  # rankings label (#26)
 
 
 def _split_volume(s: str) -> tuple[str, int | None]:
@@ -83,12 +87,13 @@ def get(con, tid: int) -> dict | None:
 
 
 def create(con, data: dict, seed_key: int | None = None) -> dict:
-    d = {"supporting": [], "volume": None, "win_basis": "", "phase": 1, "product_line": "bridal", "is_new": 0, **data}
+    d = {"supporting": [], "volume": None, "win_basis": "", "phase": 1, "product_line": "bridal", "is_new": 0,
+         "topic": "", **data}
     cur = con.execute(
-        "INSERT INTO keyword_targets(seed_key,path,primary_keyword,supporting,volume,win_basis,phase,product_line,is_new)"
-        " VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO keyword_targets(seed_key,path,primary_keyword,supporting,volume,win_basis,phase,product_line,is_new,topic)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
         (seed_key, d["path"], d["primary_keyword"], json.dumps(d["supporting"]), d["volume"], d["win_basis"],
-         d["phase"], d["product_line"], d["is_new"]))
+         d["phase"], d["product_line"], d["is_new"], d["topic"] or ""))
     con.commit()
     return get(con, cur.lastrowid)
 
@@ -117,7 +122,7 @@ def seed(con, rows: list[dict]) -> dict:
     res = {"added": 0, "updated": 0, "kept_edited": 0}
     for r in rows:
         ex = con.execute("SELECT id, edited FROM keyword_targets WHERE seed_key=?", (r["seed_key"],)).fetchone()
-        data = {k: r[k] for k in FIELDS}
+        data = {k: r[k] for k in SEED_FIELDS}
         if ex is None:
             create(con, data, r["seed_key"])
             res["added"] += 1

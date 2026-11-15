@@ -18,6 +18,12 @@ def _stem_key(s: str) -> tuple:
     return tuple(sorted(_stem(w) for w in re.findall(_WORDS, s.lower())))
 
 
+def same_variant(a: str, b: str) -> bool:
+    """a and b are close variants of one search (case, plural/singular, word order)."""
+    k = _stem_key(a)
+    return bool(k) and k == _stem_key(b)
+
+
 def contains_variant(text: str, kw: str) -> bool:
     """Some contiguous run of words in text is kw or a close variant (plural/singular, word order)."""
     k = _stem_key(kw)

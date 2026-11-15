@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, sites, supporting, targets, spend
+from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -1040,6 +1040,46 @@ def targets_delete(tid: int):
         if not targets.delete(con, tid):
             raise HTTPException(404, "No such target")
     return {"deleted": tid}
+
+
+@app.get("/api/rankings")
+def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = None,
+                 labels: list[str] = Query(default=[]), movement: str = "all"):
+    """Rankings list for the active site: overview series and one row per keyword target over the range.
+    labels: OR within a kind (line:, phase:, topic:, folder:), AND across kinds; movement: all, up or down."""
+    if movement not in rankings.MOVEMENTS:
+        raise HTTPException(400, f"movement must be one of {', '.join(rankings.MOVEMENTS)}")
+    with closing(db()) as con:
+        st = gsc.store_status(con)
+        first = dt.date.fromisoformat(st["first_day"]) if st["first_day"] else None
+        last = dt.date.fromisoformat(st["last_day"]) if st["last_day"] else None
+        try:
+            rng = rankings.resolve_range(range, first, last)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        tgts = targets.list_all(con)
+        all_labels = sorted({lb for t in tgts for lb in rankings.labels(t)})
+        tgts = [t for t in tgts if rankings.label_match(rankings.labels(t), labels)]
+        if rng is None:
+            rows = [{"id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], "labels": rankings.labels(t),
+                     "volume": t.get("volume"), "clicks": 0, "impressions": 0, "top_url": None,
+                     "top_url_off_target": None, "current": None, "start": None, "movement": None, "direction": None,
+                     "period_avg": None, "no_data": True, "series": []} for t in tgts]
+            return {"first_day": None, "last_day": None, "range": None, "groupings": [], "grouping": None,
+                    "labels": all_labels, "overview": [], "rows": rows if movement == "all" else []}
+        a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
+        offered = rankings.groupings(a, b)
+        if grouping is None:
+            grouping = rankings.default_grouping(a, b)
+        elif grouping not in offered:
+            raise HTTPException(400, f"grouping {grouping!r} not offered for this range (offered: {', '.join(offered) or 'none'})")
+        daily = [dict(r) for r in con.execute(
+            "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
+            (rng["start"], rng["end"]))]
+    rep = rankings.report(daily, tgts, a, b, grouping or "day")
+    rows = rep["rows"] if movement == "all" else [r for r in rep["rows"] if r["direction"] == movement]
+    return {"first_day": st["first_day"], "last_day": st["last_day"], "range": rng, "groupings": offered,
+            "grouping": grouping, "labels": all_labels, "overview": rep["overview"], "rows": rows}
 
 
 @app.get("/api/spend-status")

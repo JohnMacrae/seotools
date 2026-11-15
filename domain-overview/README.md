@@ -82,6 +82,7 @@ next to the snapshot and the running total is on the home page.
 - `GET /api/digest[?refresh=1]` (JSON backing the `/digest` page)
 - `POST /api/digest/volumes` (paid: fetch search volume for digest queries not cached in the last 30 days)
 - `GET /api/gsc/store` (daily Search Console store for the active site: `first_day` = site's first data day, `last_day`, `rows`); `POST /api/gsc/store/sync` (free: backfills ~16 months on first run, then tops up from the last stored day to today minus 3)
+- `GET /api/rankings?range=all|12m|6m|3m|30d|12w|7d&grouping=day|week|month&labels=line:bridal&labels=phase:1&movement=all|up|down` (one row per keyword target from the daily store, close variants rolled up: `current` = impression-weighted position over the last 7 data days, `start` = first 7 data days of the range, `movement` = start − current (positive = up), `period_avg`, `clicks`, `top_url` + `top_url_off_target`, `series`; `overview` = mean target position per bucket, gaps as `null`; `range` is clamped to the first data day; `groupings` lists those giving ≥2 points; labels `line:`, `phase:`, `topic:` (target `topic` field), `folder:` are OR within a kind, AND across kinds)
 - `GET /api/spend-status` (last refresh date, last cost, total cost and green/red/never status per paid feature)
 - `GET /healthz`
 
