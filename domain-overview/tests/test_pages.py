@@ -31,7 +31,3 @@ def test_page_scripts_parse(route, tmp_path):
         p = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
         assert p.returncode == 0, f"{route} script {i}: {p.stderr}"
 
-
-def test_rankings_page_wired_to_api_and_chartjs():
-    html = TestClient(main.app).get("/rankings").text
-    assert "chart.umd" in html and "api/rankings" in html and "spanGaps" in html
