@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Bring up a throwaway QA copy of any branch for a browser or CDP check, and tear it down again.
+#   scripts/qa-branch <branch> <port>          e.g. scripts/qa-branch ralph/33-clickstream-volume 8096
+#   scripts/qa-branch --down <branch>
+# Up: a detached worktree of the branch, a copy of the live site data and .env, a compose project of its own
+# (container domain-overview-qa-<name>, restart "no", DFS_MOCK=1 so it never spends), Search Console backfill.
+# Never touches the live container, its data or its .env: everything is copied. Several branches can run at
+# once on different ports. Down: containers, local images, the data copy and the worktree are all removed.
+set -euo pipefail
+
+repo="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+live="$repo/domain-overview"
+root="${QA_ROOT:-/tmp/seotools-qa}"
+
+down=0
+if [[ "${1:-}" == "--down" ]]; then down=1; shift; fi
+branch="${1:?usage: qa-branch <branch> <port> | qa-branch --down <branch>}"
+name="$(tr -c 'a-zA-Z0-9\n' '-' <<<"$branch" | tr 'A-Z' 'a-z')"
+wt="$root/$name/wt"; data="$root/$name/data"; override="$root/$name/compose.qa.yml"
+compose() { docker compose -p "qa-$name" -f "$wt/domain-overview/docker-compose.yml" -f "$override" "$@"; }
+
+if (( down )); then
+  [[ -d "$root/$name" ]] || { echo "no QA copy of $branch under $root" >&2; exit 1; }
+  if [[ -f "$override" && -d "$wt" ]]; then compose down --rmi local; fi
+  # The container writes root-owned files into the data copy; remove them as root.
+  docker run --rm -v "$root/$name:/q" alpine rm -rf /q/data /q/compose.qa.yml
+  if git -C "$repo" worktree list --porcelain | grep -qx "worktree $wt"; then
+    git -C "$repo" worktree remove --force "$wt"
+  fi
+  rmdir "$root/$name" 2>/dev/null || true
+  echo "QA copy of $branch removed"
+  exit 0
+fi
+
+port="${2:?usage: qa-branch <branch> <port>}"
+[[ "$port" =~ ^[0-9]+$ && "$port" != 8095 ]] || { echo "port must be a number other than 8095 (live)" >&2; exit 1; }
+if docker ps --format '{{.Ports}}' | grep -q ":$port->"; then echo "port $port is already in use" >&2; exit 1; fi
+[[ -e "$root/$name" ]] && { echo "$root/$name exists: run qa-branch --down $branch first" >&2; exit 1; }
+
+# 1. Worktree of the branch (remote tip when there is one, else the local branch).
+mkdir -p "$root/$name"
+if git -C "$repo" fetch -q origin "$branch" 2>/dev/null; then ref=FETCH_HEAD; else ref="$branch"; fi
+git -C "$repo" worktree add -q --detach "$wt" "$ref"
+
+# 2. Copies of the live data and .env (data is root-owned, so copy it as root).
+mkdir -p "$data"
+docker run --rm -v "$live/data:/live:ro" -v "$data:/q" alpine sh -c '
+  if [ -f /live/sites.json ]; then cp /live/sites.json /q/ && mkdir -p /q/sites && cp /live/sites/*.db /q/sites/;
+  else cp /live/overview.db /q/; fi
+  chmod -R a+rwX /q'
+command cp -f "$live/.env" "$wt/domain-overview/.env"
+
+# 3. Its own compose project: name, port, data, no restart, no spending.
+cat > "$override" <<EOF
+services:
+  domain-overview:
+    container_name: domain-overview-qa-$name
+    restart: "no"
+    ports: !override
+      - "$port:8000"
+    volumes:
+      - $data:/data
+    environment:
+      DFS_MOCK: "1"
+EOF
+compose up -d --build domain-overview
+
+# 4. Wait for it to answer, then backfill Search Console (a failure warns; the copy still serves).
+url="http://localhost:$port"
+for _ in $(seq 60); do curl -sf -o /dev/null "$url/rankings" && break; sleep 2; done
+curl -sf -o /dev/null "$url/rankings" || { echo "QA copy did not answer on $url; see: docker logs domain-overview-qa-$name" >&2; exit 1; }
+if ! curl -sf -X POST "$url/api/gsc/store/sync" >/dev/null; then echo "warning: Search Console backfill failed" >&2; fi
+
+echo "QA copy of $branch: $url  (tear down: scripts/qa-branch --down $branch)"
