@@ -76,18 +76,26 @@ const $ = id => document.getElementById(id);
 const PRESETS = {all:"All data","12m":"12 months","6m":"6 months","3m":"3 months","30d":"30 days","12w":"12 weeks","7d":"7 days"};
 const state = {range: "3m", grouping: null, movement: "all", sort: "moved", labels: new Set(), data: null, volumeSource: "Google Ads UK monthly, keyword targets doc"};
 let chart = null;
+const csDate = () => { const f = state.data && state.data.clickstream && state.data.clickstream.fetched_at; return f ? f.slice(0, 10) : "not fetched"; };
 function csLabel(cs) {
   cs = cs || (state.data && state.data.clickstream) || {};
-  return (cs.source || "DataForSEO clickstream") + (cs.fetched_at ? ", fetched " + cs.fetched_at.slice(0, 10) : ", not fetched yet");
+  return (cs.source || "DataForSEO clickstream") + (cs.fetched_at ? ", oldest fetch " + cs.fetched_at.slice(0, 10) : ", not fetched yet");
 }
+const getJSON = async (url, opts) => {
+  const r = await fetch(url, opts), j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || `${r.status}`);
+  return j;
+};
 $("fetchcs").onclick = async () => {
-  const e = await (await fetch("api/clickstream/estimate")).json();
+  let e;
+  try { e = await getJSON("api/clickstream/estimate"); }
+  catch (err) { showError(`Clickstream estimate failed: ${err.message}`); return; }
   if (!e.keywords) { $("csmsg").textContent = "Nothing to fetch: all " + e.cached + " keywords cached (30 days)."; return; }
   if (!confirm(`Fetch clickstream volume for ${e.keywords} keywords (${e.cached} cached)?\nEstimated cost: $${e.cost.toFixed(4)}`)) return;
   $("csmsg").textContent = "Fetching\u2026";
-  const r = await fetch("api/clickstream", {method: "POST"});
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) { $("csmsg").textContent = ""; showError(j.detail || `Clickstream fetch failed (${r.status})`); return; }
+  let j;
+  try { j = await getJSON("api/clickstream", {method: "POST"}); }
+  catch (err) { $("csmsg").textContent = ""; showError(`Clickstream fetch failed: ${err.message}`); return; }
   $("csmsg").textContent = `Fetched ${j.fetched} keywords, cost $${j.cost.toFixed(4)}.`;
   window.spendLights && window.spendLights.refresh();
   load();
@@ -201,7 +209,7 @@ function drawTable(d, kinds) {
   const rows = sorted(d.rows);
   if (!rows.length) { $("tbl").innerHTML = `<div class="sub">No keyword targets match.</div>`; return; }
   $("tbl").innerHTML = `<table><thead><tr><th>Keyword</th><th>Labels</th><th class="n">Position now</th><th class="n">Movement</th>
-    <th class="n">Period avg</th><th class="n" title="${esc(state.volumeSource)}">Ads volume</th><th class="n" title="${esc(csLabel())}">Clickstream</th><th class="n">Clicks</th><th>Top URL</th></tr></thead><tbody>` +
+    <th class="n">Period avg</th><th class="n" title="${esc(state.volumeSource)}">Ads volume</th><th class="n" title="${esc(csLabel())}">Clickstream<div class="sub">${esc(csDate())}</div></th><th class="n">Clicks</th><th>Top URL</th></tr></thead><tbody>` +
     rows.map(r => `<tr class="rowlink" data-id="${r.id}" style="cursor:pointer"><td>${esc(r.keyword)}<div class="sub">${esc(r.path)}</div></td>
       <td>${r.labels.filter(l => kindOf(l) in kinds).map(l => `<span class="lbl">${esc(l)}</span>`).join("")}</td>
       <td class="n">${r.no_data ? '<span class="sub">no data</span>' : pos(r.current)}</td><td class="n">${arrow(r)}</td>

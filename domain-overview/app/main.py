@@ -1169,7 +1169,7 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
     with closing(db()) as con:
         w = _rankings_window(con, range, grouping)
         tgts = targets.with_tags(con, targets.list_all(con))
-        cs, cslabel = clickstream.volumes(con), clickstream.label(con)
+        cs, cslabel = clickstream.load(con)
         marks = _journal_markers(con, w)
     all_labels = sorted({lb for t in tgts for lb in rankings.labels(t)})
     tgts = [t for t in tgts if rankings.label_match(rankings.labels(t), labels)]
@@ -1191,7 +1191,7 @@ def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping
         if t is None:
             raise HTTPException(404, "No such target")
         t["tags"] = targets.tags_of(con, tid)
-        cs, cslabel = clickstream.volumes(con), clickstream.label(con)
+        cs, cslabel = clickstream.load(con)
         w = _rankings_window(con, range, grouping)
         marks = _journal_markers(con, w, t["path"])
     head = {"range": w["range"], "groupings": w["groupings"], "grouping": w["grouping"],

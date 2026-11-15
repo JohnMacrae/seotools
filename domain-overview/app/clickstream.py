@@ -24,8 +24,13 @@ def ensure_tables(con) -> None:
         keyword TEXT PRIMARY KEY, volume INTEGER, fetched_at TEXT NOT NULL, run_id INTEGER)""")
 
 
+def norm_keyword(keyword: str) -> str:
+    """The cache key for a keyword: trimmed and lowercased. Every lookup into the cache goes through this."""
+    return keyword.strip().lower()
+
+
 def _norm(keywords) -> list[str]:
-    return list(dict.fromkeys(k.strip().lower() for k in keywords if k and k.strip()))
+    return list(dict.fromkeys(norm_keyword(k) for k in keywords if k and k.strip()))
 
 
 def _todo(con, keywords, now) -> tuple[list[str], int]:
@@ -48,13 +53,15 @@ def volumes(con) -> dict[str, int]:
     return {r[0]: r[1] for r in con.execute("SELECT keyword, volume FROM clickstream_volumes WHERE volume IS NOT NULL")}
 
 
-def fetched_at(con) -> str | None:
-    r = con.execute("SELECT MAX(fetched_at) FROM clickstream_volumes").fetchone()
-    return r[0]
-
-
 def label(con) -> dict:
-    return {"source": SOURCE, "fetched_at": fetched_at(con)}
+    """Source and date for the column. The date is the oldest cached fetch, so it never overstates freshness."""
+    oldest = con.execute("SELECT MIN(fetched_at) FROM clickstream_volumes").fetchone()[0]
+    return {"source": SOURCE, "fetched_at": oldest}
+
+
+def load(con) -> tuple[dict[str, int], dict]:
+    """Cached volumes and their label, read together for the rankings endpoints."""
+    return volumes(con), label(con)
 
 
 async def fetch(con, keywords, now=None) -> dict:
@@ -71,8 +78,8 @@ async def fetch(con, keywords, now=None) -> dict:
             items, cost = await dfs.post_path(c, DFS_PATH, {"keywords": chunk, "location_code": DFS_LOCATION},
                                               mock_name="clickstream_volume", all_results=True)
             total += cost
-            got = {(it.get("keyword") or "").lower(): it.get("search_volume") for it in (items or [])}
-            rows += [(k, got.get(k)) for k in chunk]
+            got = {norm_keyword(it.get("keyword") or ""): it.get("search_volume") for it in (items or [])}
+            rows += [(k, got[k]) for k in chunk if k in got]  # unanswered keywords stay uncached
     run_id = con.execute("INSERT INTO clickstream_runs(fetched_at, keywords, cost) VALUES (?,?,?)",
                          (stamp, len(todo), total)).lastrowid
     con.executemany("INSERT OR REPLACE INTO clickstream_volumes(keyword, volume, fetched_at, run_id) VALUES (?,?,?,?)",

@@ -14,6 +14,7 @@ import datetime as dt
 from urllib.parse import urlsplit
 
 from . import match
+from .clickstream import norm_keyword
 
 PRESETS = ("all", "12m", "6m", "3m", "30d", "12w", "7d")
 DEFAULT_PRESET = "3m"
@@ -160,7 +161,8 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
         rows.append({
             "id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], "labels": labels(t),
             "volume": t.get("volume"),
-            "clickstream_volume": (clickstream or {}).get(t["primary_keyword"].strip().lower()), "clicks": sum(r["clicks"] for r in vr), "impressions": imps,
+            "clickstream_volume": _clickstream_volume(clickstream, t),
+            "clicks": sum(r["clicks"] for r in vr), "impressions": imps,
             "top_url": top, "top_url_off_target": None if top is None else _path(top) != _path(t["path"]),
             "current": _r(cur), "start": _r(st), "movement": _r(mv),
             "direction": None if mv is None else "up" if mv > 0 else "down" if mv < 0 else "flat",
@@ -177,10 +179,14 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
     return {"rows": rows, "overview": overview}
 
 
+def _clickstream_volume(clickstream: dict[str, int] | None, target: dict) -> int | None:
+    return (clickstream or {}).get(norm_keyword(target["primary_keyword"]))
+
+
 def no_data(target: dict, clickstream: dict[str, int] | None = None) -> dict:
     """A list row's figures when the Search Console store is empty: everything missing, never 0 (ADR 0002)."""
     return {"labels": labels(target), "volume": target.get("volume"),
-            "clickstream_volume": (clickstream or {}).get(target["primary_keyword"].strip().lower()),
+            "clickstream_volume": _clickstream_volume(clickstream, target),
             "clicks": None, "impressions": None,
             "top_url": None, "top_url_off_target": None, "current": None, "start": None, "movement": None,
             "direction": None, "period_avg": None, "no_data": True, "series": []}

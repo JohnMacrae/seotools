@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app import clickstream, dfs, main  # noqa: E402
 from tests.test_rankings import TARGETS, daily_rows  # noqa: E402
 
+REAL_POST = dfs.post_path
+
 
 @pytest.fixture
 def c(tmp_path, monkeypatch):
@@ -89,3 +91,32 @@ def test_dfs_failure_is_502_and_records_nothing(c, monkeypatch):
     monkeypatch.setattr(dfs, "post_path", boom)
     assert c.post("/api/clickstream").status_code == 502
     assert c.get("/api/spend-status").json()["features"]["clickstream"]["status"] == "never"
+
+
+def test_dfs_mock_mode_serves_sample_volumes(c, monkeypatch):
+    """DFS_MOCK=1 ("try it without credits") reads app/mock/clickstream_volume.json, so the column fills."""
+    monkeypatch.setattr(dfs, "post_path", REAL_POST)
+    monkeypatch.setattr(dfs, "MOCK", True)
+    r = c.post("/api/clickstream").json()
+    assert r["fetched"] == len(TARGETS) and r["cost"] == 0
+    rows = c.get("/api/rankings", params={"range": "all"}).json()["rows"]
+    assert all(isinstance(x["clickstream_volume"], int) for x in rows)
+
+
+def test_keywords_missing_from_the_response_are_not_cached(c, monkeypatch):
+    """A keyword DataForSEO says nothing about stays uncached, so the next fetch asks again."""
+    async def partial(client, path, task, mock_name=None, all_results=False):
+        return [{"keyword": task["keywords"][0], "search_volume": None}], 0.0103
+    monkeypatch.setattr(dfs, "post_path", partial)
+    c.post("/api/clickstream")
+    e = c.get("/api/clickstream/estimate").json()
+    assert e["cached"] == 1 and e["keywords"] == len(TARGETS) - 1
+
+
+def test_label_date_is_the_oldest_fetch(c):
+    """The column's date never overstates freshness: it is the oldest cached fetch."""
+    c.post("/api/clickstream")
+    with main.closing(main.db()) as con:
+        con.execute("UPDATE clickstream_volumes SET fetched_at='2026-10-20T00:00:00+00:00' WHERE keyword='ivory veils'")
+        con.commit()
+    assert c.get("/api/rankings", params={"range": "all"}).json()["clickstream"]["fetched_at"].startswith("2026-10-20")
