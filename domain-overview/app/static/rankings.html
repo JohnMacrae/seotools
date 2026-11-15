@@ -6,10 +6,10 @@
 <title>Rankings</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
-  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --warn: #e3742f; --radius: 10px;
+  :root { --good: #2e8b57; --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --warn: #e3742f; --radius: 10px;
     --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
     color-scheme: light dark; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --warn: #f0a060; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
+  @media (prefers-color-scheme: dark) { :root { --good: #4cc485; --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --warn: #f0a060; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
 
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
@@ -37,7 +37,7 @@
   h3 { font-size: 14px; margin: 14px 0 4px; }
   .chart { position: relative; height: 280px; }
   .kind { white-space: nowrap; } .kind label { margin-left: 6px; }
-  .up { color: #2e8b57; font-weight: 600; } .down { color: var(--bad); font-weight: 600; } .flat { color: var(--muted); }
+  .up { color: var(--good); font-weight: 600; } .down { color: var(--bad); font-weight: 600; } .flat { color: var(--muted); }
   th.sort { cursor: pointer; } th.sort.on { color: var(--ink); }
   td.n, th.n { text-align: right; }
   .lbl { display: inline-block; font-size: 11px; padding: 0 6px; margin: 0 4px 2px 0; border-radius: 8px; background: var(--subtle); color: var(--muted); }

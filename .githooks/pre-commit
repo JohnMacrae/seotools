@@ -1,3 +1,6 @@
 #!/bin/sh
-# Block the commit if the test suite fails.
-cd "$(git rev-parse --show-toplevel)/domain-overview" && docker compose run --build --rm tests
+# Block the commit if a page script has a syntax error or the test suite fails.
+set -e
+top="$(git rev-parse --show-toplevel)"
+"$top/scripts/check-js"
+cd "$top/domain-overview" && docker compose run --build --rm tests

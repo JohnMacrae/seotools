@@ -1,0 +1,42 @@
+#!/volume1/docker/jev-ultrafast/.venv/bin/python
+"""Open a page in the shared headless Chrome (CDP on 127.0.0.1:9223), wait, evaluate a JS expression, print the JSON result.
+  scripts/cdp-eval http://localhost:8095/rankings 'document.querySelectorAll("#tbl tr.rowlink").length'
+  scripts/cdp-eval --wait 10 <url> '({title: document.title, err: document.querySelector(".err")?.textContent})'
+The expression is awaited and returned by value; return an object for several readings. The tab is closed afterwards."""
+import asyncio
+import json
+import sys
+import urllib.request
+
+import websockets
+
+CDP = "http://127.0.0.1:9223"
+
+
+async def run(url: str, expr: str, wait: float) -> None:
+    req = urllib.request.Request(f"{CDP}/json/new?{url}", method="PUT")
+    tab = json.loads(urllib.request.urlopen(req).read())
+    try:
+        async with websockets.connect(tab["webSocketDebuggerUrl"], max_size=None) as ws:
+            await asyncio.sleep(wait)
+            await ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
+                                      "params": {"expression": expr, "awaitPromise": True, "returnByValue": True}}))
+            while True:
+                msg = json.loads(await ws.recv())
+                if msg.get("id") == 1:
+                    res = msg["result"]
+                    if "exceptionDetails" in res:
+                        sys.exit("JS error: " + json.dumps(res["exceptionDetails"].get("exception", {}).get("description")))
+                    print(json.dumps(res["result"].get("value"), indent=1))
+                    return
+    finally:
+        urllib.request.urlopen(f"{CDP}/json/close/{tab['id']}")
+
+
+args = sys.argv[1:]
+wait = 6.0
+if args[:1] == ["--wait"]:
+    wait, args = float(args[1]), args[2:]
+if len(args) != 2:
+    sys.exit(__doc__)
+asyncio.run(run(args[0], args[1], wait))

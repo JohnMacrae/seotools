@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Syntax-check every page script: the inline <script> blocks in app/static/*.html and the app/static/*.js files.
+Needs node on PATH. Exit 1 with node's error on the first bad file; run by .githooks/pre-commit."""
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+STATIC = Path(__file__).resolve().parent.parent / "domain-overview" / "app" / "static"
+INLINE = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S)
+
+bad = 0
+with tempfile.TemporaryDirectory() as tmp:
+    for f in sorted(STATIC.glob("*.html")) + sorted(STATIC.glob("*.js")):
+        code = f.read_text() if f.suffix == ".js" else "\n".join(INLINE.findall(f.read_text()))
+        # .mjs so top-level await (used by some pages) parses
+        js = Path(tmp) / f"{f.stem}.mjs"
+        js.write_text(code)
+        r = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True)
+        if r.returncode:
+            bad += 1
+            print(f"{f.name}: {r.stderr.strip()}", file=sys.stderr)
+sys.exit(1 if bad else 0)
