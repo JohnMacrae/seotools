@@ -137,3 +137,8 @@ def delete(con: sqlite3.Connection, eid: int) -> bool | None:
 def for_page(con: sqlite3.Connection, page: str) -> list[dict]:
     """Entries (newest first) whose page or pattern covers `page`; used for chart markers."""
     return [e for e in list_entries(con) if matches(e["page"], page)]
+
+
+def in_range(entries: list[dict], start: str, end: str) -> list[dict]:
+    """Entries whose live date falls in start..end (ISO dates, inclusive)."""
+    return [e for e in entries if start <= e["live_date"] <= end]

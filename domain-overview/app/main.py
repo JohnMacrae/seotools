@@ -1145,7 +1145,7 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
                      "top_url_off_target": None, "current": None, "start": None, "movement": None, "direction": None,
                      "period_avg": None, "no_data": True, "series": []} for t in tgts]
             return {"first_day": None, "last_day": None, "range": None, "groupings": [], "grouping": None,
-                    "labels": all_labels, "overview": [], "rows": rows if movement == "all" else []}
+                    "labels": all_labels, "overview": [], "journal": [], "rows": rows if movement == "all" else []}
         a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
         offered = rankings.groupings(a, b)
         if grouping is None:
@@ -1155,10 +1155,11 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
         daily = [dict(r) for r in con.execute(
             "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
             (rng["start"], rng["end"]))]
+        marks = journal.in_range(journal.list_entries(con), rng["start"], rng["end"])
     rep = rankings.report(daily, tgts, a, b, grouping or "day")
     rows = rep["rows"] if movement == "all" else [r for r in rep["rows"] if r["direction"] == movement]
     return {"first_day": st["first_day"], "last_day": st["last_day"], "range": rng, "groupings": offered,
-            "grouping": grouping, "labels": all_labels, "overview": rep["overview"], "rows": rows}
+            "grouping": grouping, "labels": all_labels, "overview": rep["overview"], "journal": marks, "rows": rows}
 
 
 @app.get("/api/rankings/{tid}")
@@ -1178,7 +1179,7 @@ def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping
             raise HTTPException(400, str(e))
         if rng is None:
             return {"id": tid, "keyword": t["primary_keyword"], "path": t["path"], "labels": rankings.labels(t),
-                    "tags": t["tags"], "range": None, "groupings": [], "grouping": None, "series": [], "variants": [],
+                    "tags": t["tags"], "range": None, "groupings": [], "grouping": None, "series": [], "variants": [], "journal": [],
                     "cards": {"current": None, "start": None, "movement": None, "direction": None, "period_avg": None,
                               "clicks": 0, "impressions": 0, "no_data": True, "ads_volume": t.get("volume")}}
         a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
@@ -1190,7 +1191,9 @@ def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping
         daily = [dict(r) for r in con.execute(
             "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
             (rng["start"], rng["end"]))]
-    return {**rankings.detail(daily, t, a, b, grouping or "day"), "range": rng, "groupings": offered, "grouping": grouping}
+        marks = journal.in_range(journal.for_page(con, t["path"]), rng["start"], rng["end"])
+    return {**rankings.detail(daily, t, a, b, grouping or "day"), "range": rng, "groupings": offered, "grouping": grouping,
+            "journal": marks}
 
 
 @app.get("/api/tags")

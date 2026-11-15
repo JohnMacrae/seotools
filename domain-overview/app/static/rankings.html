@@ -81,6 +81,7 @@
   <div class="sub" id="note" style="margin-bottom:10px"></div>
   <div class="card"><h2 style="margin:0 0 6px;font-size:15px">Average position of the targets <span class="sub">(lower is better; gaps = no data)</span></h2>
     <div class="chart"><canvas id="ov"></canvas></div></div>
+  <div class="sub" id="ovnote"></div>
   <div class="card"><div id="tbl"></div></div>
   <div class="card" id="detail" hidden></div>
 </main>
@@ -145,12 +146,37 @@ function drawLabels(d) {
     [...s.options].forEach(o => o.selected ? st.labels.add(o.value) : st.labels.delete(o.value)); load();
   });
 }
+// Journal markers (#31): a dashed vertical line at the bucket containing each entry's live date; hover for the note.
+function markerPlugin(starts, entries) {
+  const at = e => { let i = -1; starts.forEach((s, k) => { if (s <= e.live_date) i = k; }); return i; };
+  const pts = entries.map(e => ({e, i: at(e)})).filter(m => m.i >= 0);
+  return {id: "journal", pts,
+    afterDatasetsDraw(ch) {
+      const {ctx, chartArea: a, scales: {x}} = ch;
+      ctx.save(); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+      pts.forEach(m => { const px = x.getPixelForValue(m.i);
+        ctx.strokeStyle = m.e.approx ? "#b9770e" : "#c0392b";
+        ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); });
+      ctx.restore();
+    }};
+}
+function markerTip(ch, ev) {
+  const pl = ch.config.plugins.find(p => p.id === "journal"); if (!pl) return;
+  const x = ch.scales.x, px = ev.offsetX;
+  const hit = pl.pts.filter(m => Math.abs(x.getPixelForValue(m.i) - px) < 5);
+  ch.canvas.title = hit.map(m => `${m.e.live_date}${m.e.approx ? " (approx)" : ""} ${m.e.change_type}: ${m.e.page}${m.e.note ? " \u2013 " + m.e.note : ""}`).join("\n");
+}
+function markerNote(entries) {
+  return entries.length ? ` Dashed lines mark journal entries (${entries.length}); hover a line for details.` : "";
+}
 function drawChart(d) {
   if (chart) chart.destroy();
   chart = new Chart($("ov"), {type: "line",
     data: {labels: d.overview.map(p => p.start), datasets: [{label: "Average position", data: d.overview.map(p => p.position),
       borderColor: "#2f6fde", backgroundColor: "#2f6fde", spanGaps: false, tension: 0.2, pointRadius: 2}]},
-    options: {maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}}});
+    options: {maintainAspectRatio: false, onHover: (ev, _a, ch) => markerTip(ch, ev), plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}},
+    plugins: [markerPlugin(d.overview.map(p => p.start), d.journal || [])]});
+  $("ovnote").textContent = markerNote(d.journal || []);
 }
 function drawTable(d) {
   const rows = sorted(d.rows);
@@ -189,6 +215,7 @@ function drawDetail(d) {
       ${card(c.impressions.toLocaleString(), "Search Console impressions (all close variants)")}
       ${card(c.clicks.toLocaleString(), "Clicks")}</div>
     <div class="chart"><canvas id="dch"></canvas></div>
+    <div class="sub">${markerNote(d.journal || []).trim()}</div>
     <h3>Tags</h3>
     <div id="dtags">${d.tags.map(t => `<span class="lbl">${esc(t)} <a href="#" data-rm="${esc(t)}" title="Remove tag">\u00d7</a></span>`).join("") || '<span class="sub">No tags yet.</span>'}</div>
     <div class="bar" style="margin-top:6px"><input id="newtag" placeholder="Add a tag, e.g. Services" list="taglist"><datalist id="taglist"></datalist><button id="addtag">Add</button></div>
@@ -201,7 +228,8 @@ function drawDetail(d) {
   dchart = new Chart($("dch"), {type: "line",
     data: {labels: d.series.map(p => p.start), datasets: [{label: "Position", data: d.series.map(p => p.position),
       borderColor: "#2f6fde", backgroundColor: "#2f6fde", spanGaps: false, tension: 0.2, pointRadius: 2}]},
-    options: {maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}}});
+    options: {maintainAspectRatio: false, onHover: (ev, _a, ch) => markerTip(ch, ev), plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}},
+    plugins: [markerPlugin(d.series.map(p => p.start), d.journal || [])]});
   fetch("api/tags").then(r => r.json()).then(j => { $("taglist").innerHTML = j.tags.map(t => `<option value="${esc(t)}">`).join(""); });
   const edit = async (url, method, body) => {
     const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body && JSON.stringify(body)});
