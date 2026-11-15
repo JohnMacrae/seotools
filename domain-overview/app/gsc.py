@@ -8,6 +8,8 @@ import sqlite3
 from pathlib import Path
 from urllib.parse import quote, urldefrag, urlsplit
 
+from . import sites
+
 import httpx
 
 KEY_FILE = os.environ.get("GSC_KEY_FILE", "/secrets/gsc-key.json")
@@ -24,13 +26,18 @@ class GSCError(Exception):
     pass
 
 
+def site_url() -> str:
+    """Search Console property of the active site (GSC_SITE_URL when the site has none)."""
+    return (sites.CURRENT.get() or {}).get("gsc_property") or SITE_URL
+
+
 def configured() -> bool:
-    return bool(SITE_URL) and Path(KEY_FILE).is_file()
+    return bool(site_url()) and Path(KEY_FILE).is_file()
 
 
 def site_host() -> str:
     """Bare host for the configured property (sc-domain:x or https://x/)."""
-    s = SITE_URL
+    s = site_url()
     if s.startswith("sc-domain:"):
         return s[len("sc-domain:"):].lower()
     return (urlsplit(s).hostname or "").lower()
@@ -85,7 +92,7 @@ def _token() -> str:
 
 
 def _query(client: httpx.Client, token: str, body: dict) -> list[dict]:
-    url = API.format(site=quote(SITE_URL, safe=""))
+    url = API.format(site=quote(site_url(), safe=""))
     out, start = [], 0
     while True:
         r = client.post(url, headers={"Authorization": f"Bearer {token}"},
@@ -117,7 +124,7 @@ def _merge(items, host: str, key_len: int):
 
 def latest(con: sqlite3.Connection) -> sqlite3.Row | None:
     ensure_tables(con)
-    return con.execute("SELECT * FROM gsc_fetches WHERE site=? ORDER BY id DESC LIMIT 1", (SITE_URL,)).fetchone()
+    return con.execute("SELECT * FROM gsc_fetches WHERE site=? ORDER BY id DESC LIMIT 1", (site_url(),)).fetchone()
 
 
 def summary(con: sqlite3.Connection, row, cached: bool) -> dict:
@@ -152,7 +159,7 @@ def get_fetch(con: sqlite3.Connection, refresh: bool = False) -> dict:
         raise GSCError(f"{type(e).__name__}: {e}"[:400])
     rows, pages = _merge(pq, host, 2), _merge(pg, host, 1)
     cur = con.execute("INSERT INTO gsc_fetches(site,fetched_at,start_date,end_date,rows) VALUES (?,?,?,?,?)",
-                      (SITE_URL, dt.datetime.utcnow().isoformat(timespec="seconds"), start.isoformat(), end.isoformat(), len(rows)))
+                      (site_url(), dt.datetime.utcnow().isoformat(timespec="seconds"), start.isoformat(), end.isoformat(), len(rows)))
     fid = cur.lastrowid
     con.executemany("INSERT INTO gsc_rows VALUES (?,?,?,?,?,?,?)", [(fid, *r) for r in rows])
     con.executemany("INSERT INTO gsc_pages VALUES (?,?,?,?,?,?)", [(fid, *p) for p in pages])
@@ -249,7 +256,7 @@ def get_digest_data(con: sqlite3.Connection, refresh: bool = False) -> dict:
     if not configured():
         raise GSCError("Search Console not configured")
     ensure_tables(con)
-    meta = con.execute("SELECT * FROM gsc_digest_meta WHERE site=?", (SITE_URL,)).fetchone()
+    meta = con.execute("SELECT * FROM gsc_digest_meta WHERE site=?", (site_url(),)).fetchone()
     fresh = meta and (dt.datetime.utcnow() - dt.datetime.fromisoformat(meta["fetched_at"])) < dt.timedelta(hours=CACHE_HOURS)
     if refresh or not fresh:
         host = site_host()
@@ -275,10 +282,10 @@ def get_digest_data(con: sqlite3.Connection, refresh: bool = False) -> dict:
         con.executemany("INSERT INTO gsc_digest_rows VALUES (?,?,?,?,?,?)", rows)
         con.executemany("INSERT INTO gsc_site_daily VALUES (?,?,?,?,?)", [(p, d, c, i, pos) for p, d, c, i, _ctr, pos in daily])
         con.execute("INSERT OR REPLACE INTO gsc_digest_meta VALUES (?,?,?,?,?)",
-                    (SITE_URL, dt.datetime.utcnow().isoformat(timespec="seconds"), start.isoformat(), end.isoformat(),
+                    (site_url(), dt.datetime.utcnow().isoformat(timespec="seconds"), start.isoformat(), end.isoformat(),
                      dstart.isoformat()))
         con.commit()
-        meta = con.execute("SELECT * FROM gsc_digest_meta WHERE site=?", (SITE_URL,)).fetchone()
+        meta = con.execute("SELECT * FROM gsc_digest_meta WHERE site=?", (site_url(),)).fetchone()
     return {"fetched_at": meta["fetched_at"], "page2_start": meta["start_date"], "page2_end": meta["end_date"],
             "daily_start": meta["daily_start"],
             "rows": [dict(r) for r in con.execute("SELECT page,query,clicks,impressions,ctr,position FROM gsc_digest_rows")],

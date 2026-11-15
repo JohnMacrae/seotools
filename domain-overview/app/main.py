@@ -12,11 +12,11 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, supporting, targets, spend
+from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -29,9 +29,32 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 _crawl_tasks: set[asyncio.Task] = set()  # keep refs so background crawls aren't garbage-collected
 
 
+def _site(slug: str | None = None) -> dict | None:
+    return sites.get(DB_PATH.parent, DB_PATH, slug)
+
+
+@app.middleware("http")
+async def _active_site(request: Request, call_next):
+    """Active site: ?site= wins over the cookie; an unknown cookie falls back to the default site."""
+    asked = request.query_params.get("site")
+    site = _site(asked) if asked else (_site(request.cookies.get("site")) or _site())
+    if not site:
+        return JSONResponse({"detail": f"Unknown site {asked!r}"}, status_code=404)
+    token = sites.CURRENT.set(site)
+    try:
+        resp = await call_next(request)
+    finally:
+        sites.CURRENT.reset(token)
+    if asked:
+        resp.set_cookie("site", site["slug"], max_age=365 * 86400, samesite="lax")
+    return resp
+
+
 def db() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    site = sites.CURRENT.get() or _site()
+    path = sites.db_path(DB_PATH.parent, site["slug"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute(
@@ -149,13 +172,18 @@ def db() -> sqlite3.Connection:
 
 @app.on_event("startup")
 def _mark_interrupted():
-    with closing(db()) as con:
-        for table in ("crawls", "plans", "gaps", "mappack_runs", "supporting_runs"):
-            con.execute(
-                f"UPDATE {table} SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
-                (dt.datetime.utcnow().isoformat(timespec="seconds"),),
-            )
-        con.commit()
+    for site in sites.load(DB_PATH.parent, DB_PATH):  # first start also migrates the old database to Serenity's site file
+        token = sites.CURRENT.set(site)
+        try:
+            with closing(db()) as con:
+                for table in ("crawls", "plans", "gaps", "mappack_runs", "supporting_runs"):
+                    con.execute(
+                        f"UPDATE {table} SET status='error', error='interrupted by restart', finished_at=? WHERE status='running'",
+                        (dt.datetime.utcnow().isoformat(timespec="seconds"),),
+                    )
+                con.commit()
+        finally:
+            sites.CURRENT.reset(token)
 
 
 def clean_domain(raw: str) -> str:
@@ -169,6 +197,26 @@ def clean_domain(raw: str) -> str:
     if not re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)*\.(?:[a-z]{2,}|xn--[a-z0-9-]+)", d):
         raise HTTPException(400, f"Not a valid domain: {raw!r}")
     return d
+
+
+@app.get("/sitemenu.js")
+def sitemenu_js():
+    return FileResponse(STATIC / "sitemenu.js", media_type="application/javascript")
+
+
+@app.get("/api/sites")
+def api_sites():
+    return {"sites": sites.load(DB_PATH.parent, DB_PATH), "active": (sites.CURRENT.get() or _site())["slug"]}
+
+
+@app.post("/api/sites")
+def api_add_site(body: dict):
+    try:
+        return sites.add(DB_PATH.parent, DB_PATH, body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except KeyError:
+        raise HTTPException(409, "A site with that name already exists")
 
 
 @app.get("/spendlight.js")

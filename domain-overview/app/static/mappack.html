@@ -50,6 +50,7 @@
   <div class="card"><h3 style="margin-top:0">Run history</h3><table id="hist"></table></div>
 </main>
 <script src="spendlight.js"></script>
+<script src="sitemenu.js"></script>
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const dash = v => v == null ? "<span class=sub>-</span>" : esc(v);

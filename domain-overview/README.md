@@ -115,3 +115,7 @@ Monthly schedule (host crontab, 06:00 on the 1st; not installed by default):
 ```
 0 6 1 * * curl -fsS -X POST http://localhost:8095/api/mappack/run >/dev/null
 ```
+
+## Sites
+
+Each site has its own SQLite file in `data/sites/<slug>.db`; the registry is `data/sites.json` (slug, name, Search Console property, repo path, DataForSEO location). The header site menu (`/sitemenu.js`) switches site via `?site=<slug>` (stored in a cookie) and can add one (`POST /api/sites`). On first start the old `data/overview.db` is copied to `data/sites/serenity.db` (the original is left in place). Background jobs keep the site they started on. Search Console reads the active site property (`GSC_SITE_URL` is only a fallback).
