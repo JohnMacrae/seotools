@@ -1122,6 +1122,16 @@ def journal_delete(eid: int):
 GSC_SOURCE = "Search Console"
 
 
+def _journal_markers(con: sqlite3.Connection, w: dict, page: str | None = None) -> list[dict]:
+    """Journal entries live in the window (only those covering `page` when given), each with the start of
+    the graph point it sits on as `bucket`. Empty when the store is empty."""
+    if w["range"] is None:
+        return []
+    entries = journal.for_page(con, page) if page else journal.list_entries(con)
+    return [{**e, "bucket": rankings.bucket(dt.date.fromisoformat(e["live_date"]), w["grouping"]).isoformat()}
+            for e in journal.in_range(entries, w["range"]["start"], w["range"]["end"])]
+
+
 def _rankings_window(con: sqlite3.Connection, preset: str, grouping: str | None) -> dict:
     """The stored Search Console span, the resolved range and interval, and the daily rows in it.
     range is None when the store is empty. One home for range and interval checks (400 on a bad one)."""
@@ -1158,7 +1168,7 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
     with closing(db()) as con:
         w = _rankings_window(con, range, grouping)
         tgts = targets.with_tags(con, targets.list_all(con))
-        marks = journal.in_range(journal.list_entries(con), w["range"]["start"], w["range"]["end"]) if w["range"] else []
+        marks = _journal_markers(con, w)
     all_labels = sorted({lb for t in tgts for lb in rankings.labels(t)})
     tgts = [t for t in tgts if rankings.label_match(rankings.labels(t), labels)]
     head = {k: w[k] for k in ("first_day", "last_day", "range", "groupings", "grouping")}
@@ -1180,7 +1190,7 @@ def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping
             raise HTTPException(404, "No such target")
         t["tags"] = targets.tags_of(con, tid)
         w = _rankings_window(con, range, grouping)
-        marks = journal.in_range(journal.for_page(con, t["path"]), w["range"]["start"], w["range"]["end"]) if w["range"] else []
+        marks = _journal_markers(con, w, t["path"])
     head = {"range": w["range"], "groupings": w["groupings"], "grouping": w["grouping"],
             "gsc": {"source": GSC_SOURCE, "as_of": w["last_day"]}, "journal": marks}
     if w["range"] is None:

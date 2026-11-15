@@ -6,10 +6,10 @@
 <title>Rankings</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
-  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
+  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --warn: #e3742f; --radius: 10px;
     --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
     color-scheme: light dark; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --warn: #f0a060; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
 
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
@@ -144,40 +144,41 @@ function drawLabelFilter(kinds) {
     c.checked ? state.labels.add(c.value) : state.labels.delete(c.value); load();
   });
 }
-// Journal markers (#31): a dashed vertical line at the bucket containing each entry's live date; hover for the note.
-function markerPlugin(starts, entries) {
-  const at = e => { let i = -1; starts.forEach((s, k) => { if (s <= e.live_date) i = k; }); return i; };
-  const pts = entries.map(e => ({e, i: at(e)})).filter(m => m.i >= 0);
-  return {id: "journal", pts,
-    afterDatasetsDraw(ch) {
-      const {ctx, chartArea: a, scales: {x}} = ch;
-      ctx.save(); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
-      pts.forEach(m => { const px = x.getPixelForValue(m.i);
-        ctx.strokeStyle = m.e.approx ? "#b9770e" : "#c0392b";
-        ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); });
-      ctx.restore();
-    }};
-}
-function markerTip(ch, ev) {
-  const pl = ch.config.plugins.find(p => p.id === "journal"); if (!pl) return;
-  const x = ch.scales.x, px = ev.offsetX;
-  const hit = pl.pts.filter(m => Math.abs(x.getPixelForValue(m.i) - px) < 5);
-  ch.canvas.title = hit.map(m => `${m.e.live_date}${m.e.approx ? " (approx)" : ""} ${m.e.change_type}: ${m.e.page}${m.e.note ? " \u2013 " + m.e.note : ""}`).join("\n");
+// Journal markers (#31): a dashed vertical line at the graph point holding each entry (the API's `bucket`);
+// red for an exact live date, amber for an approximate one; hover a line for the note.
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function lineChart(canvas, points, label, entries) {
+  const accent = cssVar("--accent"), exact = cssVar("--bad"), approx = cssVar("--warn");
+  const starts = points.map(p => p.start);
+  const marks = entries.map(e => ({e, i: starts.indexOf(e.bucket)})).filter(m => m.i >= 0);
+  const tip = (ch, ev) => {
+    const hit = marks.filter(m => Math.abs(ch.scales.x.getPixelForValue(m.i) - ev.offsetX) < 5);
+    ch.canvas.title = hit.map(({e}) => `${e.live_date}${e.approx ? " (approx)" : ""} ${e.change_type}: ${e.page}${e.note ? " \u2013 " + e.note : ""}`).join("\n");
+  };
+  const markers = {id: "journal", afterDatasetsDraw(ch) {
+    const {ctx, chartArea: area, scales: {x}} = ch;
+    ctx.save(); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+    marks.forEach(m => { const px = x.getPixelForValue(m.i);
+      ctx.strokeStyle = m.e.approx ? approx : exact;
+      ctx.beginPath(); ctx.moveTo(px, area.top); ctx.lineTo(px, area.bottom); ctx.stroke(); });
+    ctx.restore();
+  }};
+  return new Chart(canvas, {type: "line",
+    data: {labels: starts, datasets: [{label, data: points.map(p => p.position),
+      borderColor: accent, backgroundColor: accent, spanGaps: false, tension: 0.2, pointRadius: 2}]},
+    options: {maintainAspectRatio: false, onHover: (ev, _a, ch) => tip(ch, ev), plugins: {legend: {display: false}},
+      scales: {y: {reverse: true, title: {display: true, text: "Position"}}}},
+    plugins: [markers]});
 }
 function markerNote(entries) {
-  return entries.length ? ` Dashed lines mark journal entries (${entries.length}); hover a line for details.` : "";
+  return entries.length ? ` Dashed lines mark journal entries (${entries.length}): red for an exact live date, amber for an approximate one; hover a line for details.` : "";
 }
 function drawChart(d) {
   if (chart) chart.destroy();
   chart = null;
   if (typeof Chart === "undefined") { showError("Chart library failed to load; the table below is still current."); return; }
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-  chart = new Chart($("ov"), {type: "line",
-    data: {labels: d.overview.map(p => p.start), datasets: [{label: "Average position", data: d.overview.map(p => p.position),
-      borderColor: accent, backgroundColor: accent, spanGaps: false, tension: 0.2, pointRadius: 2}]},
-    options: {maintainAspectRatio: false, onHover: (ev, _a, ch) => markerTip(ch, ev), plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}},
-    plugins: [markerPlugin(d.overview.map(p => p.start), d.journal || [])]});
-  $("ovnote").textContent = markerNote(d.journal || []);
+  chart = lineChart($("ov"), d.overview, "Average position", d.journal);
+  $("ovnote").textContent = markerNote(d.journal);
 }
 function drawTable(d, kinds) {
   const rows = sorted(d.rows);
@@ -217,7 +218,7 @@ function drawDetail(d) {
       ${card(num(c.impressions), gscLabel(d.gsc, "impressions (all close variants)"))}
       ${card(num(c.clicks), gscLabel(d.gsc, "clicks"))}</div>
     <div class="chart"><canvas id="dch"></canvas></div>
-    <div class="sub">${markerNote(d.journal || []).trim()}</div>
+    <div class="sub">${markerNote(d.journal).trim()}</div>
     <h3>Free tags</h3>
     <div id="dtags">${d.tags.map(t => `<span class="lbl">${esc(t)} <a href="#" data-rm="${esc(t)}" title="Remove free tag">\u00d7</a></span>`).join("") || '<span class="sub">No free tags yet.</span>'}</div>
     <div class="bar" style="margin-top:6px"><input id="newtag" placeholder="Add a free tag, e.g. Services" list="taglist"><datalist id="taglist"></datalist><button id="addtag">Add</button></div>
@@ -229,12 +230,7 @@ function drawDetail(d) {
   if (dchart) dchart.destroy();
   dchart = null;
   if (typeof Chart === "undefined") return;
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-  dchart = new Chart($("dch"), {type: "line",
-    data: {labels: d.series.map(p => p.start), datasets: [{label: "Position", data: d.series.map(p => p.position),
-      borderColor: accent, backgroundColor: accent, spanGaps: false, tension: 0.2, pointRadius: 2}]},
-    options: {maintainAspectRatio: false, onHover: (ev, _a, ch) => markerTip(ch, ev), plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}},
-    plugins: [markerPlugin(d.series.map(p => p.start), d.journal || [])]});
+  dchart = lineChart($("dch"), d.series, "Position", d.journal);
   fetch("api/tags").then(async r => {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || r.status);
