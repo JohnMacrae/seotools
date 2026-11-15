@@ -68,6 +68,7 @@
   <div class="card"><div id="tbl"></div></div>
   <div class="card" id="detail" hidden></div>
 </main>
+<script src="fetchjson.js"></script>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
 <script>
@@ -81,11 +82,6 @@ function csLabel(cs) {
   cs = cs || (state.data && state.data.clickstream) || {};
   return (cs.source || "DataForSEO clickstream") + (cs.fetched_at ? ", oldest fetch " + cs.fetched_at.slice(0, 10) : ", not fetched yet");
 }
-const getJSON = async (url, opts) => {
-  const r = await fetch(url, opts), j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.detail || `${r.status}`);
-  return j;
-};
 $("fetchcs").onclick = async () => {
   let e;
   try { e = await getJSON("api/clickstream/estimate"); }
@@ -116,16 +112,14 @@ function showError(msg) { $("err").innerHTML = `<div class="err">${esc(msg)}</di
 async function loadVolumeSource() {
   // ADR 0002: the Ads volume figure is labelled with its source and date (the targets doc's as-of).
   try {
-    const m = await (await fetch("api/targets/meta")).json();
+    const m = await getJSON("api/targets/meta");
     if (m.doc_mtime) state.volumeSource = `Google Ads UK monthly, keyword targets doc as of ${m.doc_mtime.slice(0, 10)}`;
-  } catch {}
+  } catch (e) { showError(`Ads volume source failed to load: ${e.message}`); }
 }
 async function load() {
   $("err").innerHTML = "";
   try {
-    const r = await fetch("api/rankings?" + query());
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) { showError(j.detail || `Rankings failed (${r.status})`); return; }
+    const j = await getJSON("api/rankings?" + query());
     state.data = j; state.grouping = j.grouping; draw();
     if (dcur != null && !$("detail").hidden) openDetail(dcur, false);  // keep an open detail on the same range
   } catch (e) { showError(`Rankings failed to load: ${e.message}`); }
@@ -230,10 +224,9 @@ async function openDetail(id, scroll = true) {
   dcur = id;
   const p = new URLSearchParams({range: state.range});
   if (state.grouping) p.set("grouping", state.grouping);
-  let r, d;
-  try { r = await fetch(`api/rankings/${id}?` + p); d = await r.json().catch(() => ({})); }
+  let d;
+  try { d = await getJSON(`api/rankings/${id}?` + p); }
   catch (e) { showError(`Detail failed to load: ${e.message}`); return; }
-  if (!r.ok) { showError(d.detail || `Detail failed (${r.status})`); return; }
   drawDetail(d);
   if (scroll) $("detail").scrollIntoView({behavior: "smooth"});
 }
@@ -263,16 +256,12 @@ function drawDetail(d) {
   dchart = null;
   if (typeof Chart === "undefined") return;
   dchart = lineChart($("dch"), d.series, "Position", d.journal);
-  fetch("api/tags").then(async r => {
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.detail || r.status);
+  getJSON("api/tags").then(j => {
     $("taglist").innerHTML = j.tags.map(t => `<option value="${esc(t)}">`).join("");
   }).catch(e => showError(`Free tag list failed to load: ${e.message}`));
   const edit = async (url, method, body) => {
-    let r;
-    try { r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body && JSON.stringify(body)}); }
+    try { await sendJSON(method, url, body); }
     catch (e) { showError(`Free tag change failed: ${e.message}`); return; }
-    if (!r.ok) { const j = await r.json().catch(() => ({})); showError(j.detail || `Free tag change failed (${r.status})`); return; }
     await load();  // redraws the list and the open detail
   };
   $("addtag").onclick = () => edit(`api/targets/${d.id}/tags`, "POST", {tag: $("newtag").value});

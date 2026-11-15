@@ -57,6 +57,7 @@
   <div class="card" id="lccard"><h2>Low CTR on page 1</h2><div class="sub" id="lcintro"></div><div id="lc"></div></div>
   <div class="card"><h2>Decaying pages</h2><div class="sub" id="dcintro"></div><div id="dc"></div></div>
 </main>
+<script src="fetchjson.js"></script>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
 <script>
@@ -131,9 +132,7 @@ $("fetchvol").onclick = async () => {
   if (!confirm("Fetch search volumes from DataForSEO (about $0.08)? Cached queries are skipped.")) return;
   const b = $("fetchvol"); b.disabled = true; b.textContent = "Fetching…"; $("volmsg").textContent = ""; $("err").innerHTML = "";
   try {
-    const r = await fetch("api/digest/volumes", {method: "POST"});
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.detail || r.statusText);
+    const j = await sendJSON("POST", "api/digest/volumes");
     $("volmsg").textContent = `Fetched ${j.fetched}, cached ${j.cached}, cost $${Number(j.cost || 0).toFixed(2)}`;
     await load(false);
   } catch (e) { $("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -144,10 +143,7 @@ async function load(refresh) {
   const b = $("refresh"); b.disabled = true; if (refresh) b.textContent = "Fetching…";
   $("err").innerHTML = "";
   try {
-    const r = await fetch("api/digest?refresh=" + refresh);
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.detail || r.statusText);
-    render(j);
+    render(await getJSON("api/digest?refresh=" + refresh));
   } catch (e) { $("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   b.disabled = false; b.textContent = "Refresh";
 }

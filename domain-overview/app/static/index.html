@@ -80,6 +80,7 @@
   <div class="card"><div class="empty" id="landing">Loading…</div></div>
 </main>
 
+<script src="fetchjson.js"></script>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
 <script>
@@ -108,7 +109,9 @@ const tip = (id, l) => { const t = TIPS[id + "|" + l] || TIPS[l]; return t ? ` t
 function params() { return new URLSearchParams(location.search); }
 
 async function landing() {
-  const r = await fetch("api/recent").then(r => r.json());
+  let r;
+  try { r = await getJSON("api/recent"); }
+  catch (e) { $("#app").innerHTML = `<div class="err">Recent lookups failed to load: ${esc(e.message)}</div>`; return; }
   const list = r.domains.map(d => `<a href="?d=${encodeURIComponent(d.domain)}">${esc(d.domain)}</a>`).join("");
   $("#app").innerHTML = `<div class="card"><h2>Recent lookups</h2>
     <div class="recent">${list || '<span class="sub">No lookups yet — enter a domain above.</span>'}</div>
@@ -121,10 +124,8 @@ async function load(domain, loc, opts = {}) {
   if (opts.refresh) q.set("refresh", "1");
   if (opts.snapshot) q.set("snapshot", opts.snapshot);
   try {
-    const res = await fetch("api/overview?" + q);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || res.statusText);
-    const hist = await fetch(`api/history?domain=${encodeURIComponent(data.domain)}&location=${loc}`).then(r => r.json());
+    const data = await getJSON("api/overview?" + q);
+    const hist = await getJSON(`api/history?domain=${encodeURIComponent(data.domain)}&location=${loc}`);
     state = data; render(data, hist);
     if (window.spendLights) window.spendLights.refresh();
   } catch (e) {

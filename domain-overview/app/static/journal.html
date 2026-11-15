@@ -55,6 +55,7 @@
   </div>
   <div class="card"><div id="tbl"></div></div>
 </main>
+<script src="fetchjson.js"></script>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
 <script>
@@ -65,10 +66,8 @@ const typeOpts = cur => types.map(t => `<option${t === cur ? " selected" : ""}>$
 
 async function call(method, url, body) {
   $("err").innerHTML = "";
-  const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) { $("err").innerHTML = `<div class="err">${esc(j.detail || r.status)}</div>`; return null; }
-  return j;
+  try { return await sendJSON(method, url, body || undefined); }
+  catch (e) { $("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; return null; }
 }
 async function load() {
   const j = await call("GET", "api/journal");
