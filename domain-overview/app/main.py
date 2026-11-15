@@ -7,7 +7,7 @@ import json
 import os
 import re
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -1053,34 +1053,35 @@ def targets_delete(tid: int):
     return {"deleted": tid}
 
 
+@contextmanager
+def _journal_errors():
+    """One mapping from journal errors to HTTP statuses for every journal write."""
+    try:
+        yield
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except journal.DuplicateEntry:
+        raise HTTPException(409, "An entry with that ref and page already exists")
+    except PermissionError:
+        raise HTTPException(403, "Repo entries are read-only")
+
+
 @app.get("/api/journal")
 def journal_list():
     with closing(db()) as con:
-        return {"entries": journal.list_entries(con)}
+        return {"entries": journal.list_entries(con), "change_types": list(journal.CHANGE_TYPES)}
 
 
 @app.post("/api/journal")
 def journal_create(body: dict):
-    with closing(db()) as con:
-        try:
-            return journal.create(con, body)
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-        except KeyError:
-            raise HTTPException(409, "An entry with that ref and page already exists")
+    with closing(db()) as con, _journal_errors():
+        return journal.create(con, body)
 
 
 @app.put("/api/journal/{eid}")
 def journal_update(eid: int, body: dict):
-    with closing(db()) as con:
-        try:
-            e = journal.update(con, eid, body)
-        except ValueError as ex:
-            raise HTTPException(400, str(ex))
-        except KeyError:
-            raise HTTPException(409, "An entry with that ref and page already exists")
-        except PermissionError:
-            raise HTTPException(403, "Repo entries are read-only")
+    with closing(db()) as con, _journal_errors():
+        e = journal.update(con, eid, body)
     if e is None:
         raise HTTPException(404, "No such entry")
     return e
@@ -1088,11 +1089,8 @@ def journal_update(eid: int, body: dict):
 
 @app.delete("/api/journal/{eid}")
 def journal_delete(eid: int):
-    with closing(db()) as con:
-        try:
-            ok = journal.delete(con, eid)
-        except PermissionError:
-            raise HTTPException(403, "Repo entries are read-only")
+    with closing(db()) as con, _journal_errors():
+        ok = journal.delete(con, eid)
     if not ok:
         raise HTTPException(404, "No such entry")
     return {"deleted": eid}
