@@ -81,6 +81,7 @@ next to the snapshot and the running total is on the home page.
 - `POST /api/crawl?domain=example.com` (409 if one is running), `GET /api/crawl/ID`, `GET /api/crawls?domain=`, `GET /api/crawl/ID/health`
 - `GET /api/digest[?refresh=1]` (JSON backing the `/digest` page)
 - `POST /api/digest/volumes` (paid: fetch search volume for digest queries not cached in the last 30 days)
+- `GET /api/gsc/store` (daily Search Console store for the active site: `first_day` = site's first data day, `last_day`, `rows`); `POST /api/gsc/store/sync` (free: backfills ~16 months on first run, then tops up from the last stored day to today minus 3)
 - `GET /api/spend-status` (last refresh date, last cost, total cost and green/red/never status per paid feature)
 - `GET /healthz`
 
@@ -119,3 +120,7 @@ Monthly schedule (host crontab, 06:00 on the 1st; not installed by default):
 ## Sites
 
 Each site has its own SQLite file in `data/sites/<slug>.db`; the registry is `data/sites.json` (slug, name, Search Console property, repo path, DataForSEO location). The header site menu (`/sitemenu.js`) switches site via `?site=<slug>` (stored in a cookie) and can add one (`POST /api/sites`). On first start the old `data/overview.db` is copied to `data/sites/serenity.db` (the original is left in place). Background jobs keep the site they started on. Search Console reads the active site property (`GSC_SITE_URL` is only a fallback).
+
+## Daily job
+
+An in-app scheduler runs at 06:00 Europe/London for every site: Search Console top-up into `gsc_query_daily` (date × query × page, every query). One site failing doesn't stop the others; the result is printed to the container log.

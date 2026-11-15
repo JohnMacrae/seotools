@@ -10,6 +10,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -184,6 +185,74 @@ def _mark_interrupted():
                 con.commit()
         finally:
             sites.CURRENT.reset(token)
+
+
+LONDON = ZoneInfo("Europe/London")
+DAILY_AT = dt.time(6, 0)
+_daily_task: asyncio.Task | None = None
+
+
+def next_daily_run(now: dt.datetime) -> dt.datetime:
+    """Next 06:00 Europe/London strictly after `now` (aware)."""
+    local = now.astimezone(LONDON)
+    run = dt.datetime.combine(local.date(), DAILY_AT, tzinfo=LONDON)
+    if run <= local:
+        run = dt.datetime.combine(local.date() + dt.timedelta(days=1), DAILY_AT, tzinfo=LONDON)
+    return run
+
+
+def run_daily_job() -> dict:
+    """For every site: Search Console top-up (repo read joins later, #30). One site failing doesn't stop the rest."""
+    out = {}
+    for site in sites.load(DB_PATH.parent, DB_PATH):
+        token = sites.CURRENT.set(site)
+        try:
+            with closing(db()) as con:
+                gsc.sync_store(con)
+            out[site["slug"]] = "ok"
+        except Exception as e:  # noqa: BLE001 - logged in the result, next site still runs
+            out[site["slug"]] = f"error: {e}"[:300]
+        finally:
+            sites.CURRENT.reset(token)
+    print(f"daily job {dt.datetime.now(LONDON).isoformat(timespec='seconds')}: {out}", flush=True)
+    return out
+
+
+async def _daily_loop():
+    while True:
+        now = dt.datetime.now(dt.timezone.utc)
+        await asyncio.sleep((next_daily_run(now) - now).total_seconds())
+        await asyncio.to_thread(run_daily_job)
+
+
+@app.on_event("startup")
+async def _start_daily_job():
+    global _daily_task
+    _daily_task = asyncio.create_task(_daily_loop())
+
+
+@app.on_event("shutdown")
+async def _stop_daily_job():
+    if _daily_task:
+        _daily_task.cancel()
+
+
+@app.get("/api/gsc/store")
+def api_gsc_store():
+    """Daily store status for the active site: first_day is the site's first data day."""
+    with closing(db()) as con:
+        return gsc.store_status(con)
+
+
+@app.post("/api/gsc/store/sync")
+def api_gsc_store_sync():
+    """Backfill (first run) or top up the active site's daily store now. Free: Search Console has no cost."""
+    with closing(db()) as con:
+        try:
+            r = gsc.sync_store(con)
+        except gsc.GSCError as e:
+            raise HTTPException(503 if not gsc.configured() else 502, str(e))
+        return {**r, **gsc.store_status(con)}
 
 
 def clean_domain(raw: str) -> str:

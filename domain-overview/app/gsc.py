@@ -79,6 +79,9 @@ def ensure_tables(con: sqlite3.Connection):
         daily_start TEXT NOT NULL)""")
     con.execute("""CREATE TABLE IF NOT EXISTS gsc_digest_rows (
         page TEXT NOT NULL, query TEXT NOT NULL, clicks REAL, impressions REAL, ctr REAL, position REAL)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS gsc_query_daily (
+        date TEXT NOT NULL, query TEXT NOT NULL, page TEXT NOT NULL, clicks REAL, impressions REAL, position REAL,
+        PRIMARY KEY(date, query, page))""")
     con.execute("CREATE INDEX IF NOT EXISTS ix_gsc_rows ON gsc_rows(fetch_id)")
     con.execute("CREATE INDEX IF NOT EXISTS ix_gsc_pages ON gsc_pages(fetch_id)")
 
@@ -290,3 +293,55 @@ def get_digest_data(con: sqlite3.Connection, refresh: bool = False) -> dict:
             "daily_start": meta["daily_start"],
             "rows": [dict(r) for r in con.execute("SELECT page,query,clicks,impressions,ctr,position FROM gsc_digest_rows")],
             "daily": [dict(r) for r in con.execute("SELECT page,date,clicks,impressions,position FROM gsc_site_daily")]}
+
+
+# Daily store (#25): every query, by date x query x page, kept for the active site and topped up daily.
+HISTORY_DAYS = 486  # ~16 months, all the API holds
+STORE_CHUNK_DAYS = 30  # one request window, paged by _query
+
+
+def _today() -> dt.date:
+    return dt.date.today()
+
+
+def store_status(con: sqlite3.Connection) -> dict:
+    """First and last stored data day (None when empty) and row count."""
+    ensure_tables(con)
+    a, b, n = con.execute("SELECT MIN(date), MAX(date), COUNT(*) FROM gsc_query_daily").fetchone()
+    return {"first_day": a, "last_day": b, "rows": n}
+
+
+def sync_store(con: sqlite3.Connection) -> dict:
+    """Backfill the full history when the store is empty, else top up from the day after the last stored one
+    to the newest final day (today minus the lag). Returns {start, end, added} (start/end None when up to date)."""
+    if not configured():
+        raise GSCError("Search Console not configured")
+    ensure_tables(con)
+    end = _today() - dt.timedelta(days=LAG_DAYS)
+    last = con.execute("SELECT MAX(date) FROM gsc_query_daily").fetchone()[0]
+    start = dt.date.fromisoformat(last) + dt.timedelta(days=1) if last else end - dt.timedelta(days=HISTORY_DAYS - 1)
+    if start > end:
+        return {"start": None, "end": None, "added": 0}
+    host = site_host()
+    before = con.execute("SELECT COUNT(*) FROM gsc_query_daily").fetchone()[0]
+    try:
+        token = _token()
+        with httpx.Client(timeout=300) as client:
+            a = start
+            while a <= end:
+                b = min(a + dt.timedelta(days=STORE_CHUNK_DAYS - 1), end)
+                rows = _query(client, token, {"startDate": a.isoformat(), "endDate": b.isoformat(), "dataState": "final",
+                                              "dimensions": ["page", "query", "date"]})
+                con.executemany(
+                    "INSERT INTO gsc_query_daily(page,query,date,clicks,impressions,position) VALUES (?,?,?,?,?,?) "
+                    "ON CONFLICT(date,query,page) DO UPDATE SET clicks=excluded.clicks, "
+                    "impressions=excluded.impressions, position=excluded.position",
+                    [(p, q, d, c, i, pos) for p, q, d, c, i, _ctr, pos in _merge(rows, host, 3)])
+                con.commit()  # each window kept, so an interrupted backfill resumes where it stopped
+                a = b + dt.timedelta(days=1)
+    except GSCError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise GSCError(f"{type(e).__name__}: {e}"[:400])
+    added = con.execute("SELECT COUNT(*) FROM gsc_query_daily").fetchone()[0] - before
+    return {"start": start.isoformat(), "end": end.isoformat(), "added": added}
