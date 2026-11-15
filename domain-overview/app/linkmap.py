@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from urllib.parse import urlsplit
 
 from . import linkplan as lp
-from .match import _stem_key, contains_loose, contains_variant, first_sentence, url_has
+from .match import stem_key, contains_loose, contains_variant, first_sentence, url_has
 
 TEMPLATE_MIN_SRCS = 10    # same (dst, anchor) from this many src pages of one URL section = template link
 TEMPLATE_PLACEMENTS = ("nav", "header", "footer", "aside", "trail")
@@ -164,7 +164,7 @@ def build(rows: list[dict], pages: list[dict], links: list[dict], S: dict, range
         pg = page_by_key.get(tk)
         missing = None
         if pg is not None and kws:
-            prim, accept = kws[0], [kws[0]] + [k for k in kws[1:] if _stem_key(k) == _stem_key(kws[0])]
+            prim, accept = kws[0], [kws[0]] + [k for k in kws[1:] if stem_key(k) == stem_key(kws[0])]
             fields = {"title": pg.get("title"), "h1": pg.get("h1"),
                       "first sentence": first_sentence(pg.get("text") or "")}
             missing = [f for f, v in fields.items() if not any(contains_loose(v or "", k) for k in accept)]

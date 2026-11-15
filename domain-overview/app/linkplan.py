@@ -83,7 +83,7 @@ def template_rules(pages: list[dict], links: list[dict], strength: dict) -> list
     for l in linkgraph.contextual_links(pages, links):
         out_ctx[norm(l["src"])].add(norm(l["dst"]))
     for l in links:
-        if (l["dst"], linkgraph._anchor(l["anchor"])) in wide or l["placement"] == "footer":
+        if (l["dst"], linkgraph.norm_anchor(l["anchor"])) in wide or l["placement"] == "footer":
             continue
         out_any[norm(l["src"])].add(norm(l["dst"]))
     stock = linkgraph.last_stock(links)
@@ -445,21 +445,21 @@ def _approved_anchor(row: dict, text: str) -> dict | None:
     if not anchor:
         return None
     if row.get("in_text"):
-        span = _find(text, anchor)
+        span = find_phrase(text, anchor)
         if span:
             return {"anchor": text[span[0]:span[1]], "in_text": True, "sentence": None,
-                    "context": _context(text, span), "alt_anchor": None}
-    if sentence and _find(sentence, anchor):
+                    "context": phrase_context(text, span), "alt_anchor": None}
+    if sentence and find_phrase(sentence, anchor):
         return {"anchor": anchor, "in_text": False, "sentence": sentence, "context": None, "alt_anchor": None}
     return None
 
 
-def _find(text: str, phrase: str) -> tuple[int, int] | None:
+def find_phrase(text: str, phrase: str) -> tuple[int, int] | None:
     m = re.search(r"\b" + re.escape(phrase.strip()).replace(r"\ ", r"\s+") + r"\b", text, re.I)
     return (m.start(), m.end()) if m else None
 
 
-def _context(text: str, span: tuple[int, int]) -> str:
+def phrase_context(text: str, span: tuple[int, int]) -> str:
     a = max(text.rfind(". ", 0, span[0]) + 2, span[0] - 160, 0)
     b = text.find(". ", span[1])
     b = min(b + 1 if b >= 0 else len(text), span[1] + 160)
@@ -481,7 +481,7 @@ def anchor_type(anchor: str, target: dict, brand: str = "serenity") -> str:
 
 def _fallback_anchor(src_text: str, target: dict) -> dict:
     name = short_name(target)
-    span = _find(src_text, name)
+    span = find_phrase(src_text, name)
     if span:
         return {"anchor": src_text[span[0]:span[1]], "in_text": True, "sentence": None, "alt_anchor": None}
     return {"anchor": name, "in_text": False, "sentence": f"Take a look at our {name}.", "alt_anchor": None}
@@ -492,12 +492,12 @@ def validate(link: dict, text: str, target: dict) -> dict | None:
     anchor = (link.get("anchor") or "").strip()
     if link.get("skip") or not anchor or len(anchor.split()) > 8:
         return None
-    span = _find(text, anchor)
+    span = find_phrase(text, anchor)
     if span:
         return {"anchor": text[span[0]:span[1]], "in_text": True, "sentence": None,
-                "context": _context(text, span), "alt_anchor": link.get("alt_anchor")}
+                "context": phrase_context(text, span), "alt_anchor": link.get("alt_anchor")}
     sentence = (link.get("sentence") or "").strip()
-    if sentence and _find(sentence, anchor) and len(sentence.split()) <= 40:
+    if sentence and find_phrase(sentence, anchor) and len(sentence.split()) <= 40:
         return {"anchor": anchor, "in_text": False, "sentence": sentence, "context": None,
                 "alt_anchor": link.get("alt_anchor")}
     return None
@@ -561,10 +561,10 @@ def _target_anchor(kws: list[str], text: str, used: set, usage: Counter, dst: st
         if v and _key(v["anchor"]) in {_key(k) for k in order}:
             return v
     k = order[0]
-    span = _find(text, k)
+    span = find_phrase(text, k)
     if span:
         return {"anchor": text[span[0]:span[1]], "in_text": True, "sentence": None,
-                "context": _context(text, span), "alt_anchor": None}
+                "context": phrase_context(text, span), "alt_anchor": None}
     return {"anchor": k, "in_text": False, "sentence": f"Browse our {k}.", "context": None, "alt_anchor": None}
 
 
@@ -604,7 +604,7 @@ async def anchors_for(client, src: str, page: dict, items: list[dict], S: dict, 
             if v and _key(v["anchor"]) in used:
                 alt = (l.get("alt_anchor") or "").strip()
                 hay = v.get("context") or v.get("sentence") or ""
-                v = {**v, "anchor": alt} if alt and _key(alt) not in used and _find(hay, alt) else None
+                v = {**v, "anchor": alt} if alt and _key(alt) not in used and find_phrase(hay, alt) else None
             if not v:
                 if l and l.get("skip"):
                     warn.append(f"model skipped {path(c['src'])} → {path(c['dst'])}: {str(l.get('why') or '')[:100]}")
@@ -613,8 +613,8 @@ async def anchors_for(client, src: str, page: dict, items: list[dict], S: dict, 
                 continue
         else:
             v = _fallback_anchor(text, S[c["dst"]])
-            span = _find(text, v["anchor"]) if v["in_text"] else None
-            v["context"] = _context(text, span) if span else None
+            span = find_phrase(text, v["anchor"]) if v["in_text"] else None
+            v["context"] = phrase_context(text, span) if span else None
             if _key(v["anchor"]) in used:
                 warn.append(f"dropped {path(c['src'])} → {path(c['dst'])}: anchor already used on this page")
                 continue
