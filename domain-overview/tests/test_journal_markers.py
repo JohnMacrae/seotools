@@ -9,7 +9,7 @@ from tests.test_rankings_detail import c, tid  # noqa: E402,F401
 
 
 def add(c, **kw):
-    e = {"live_date": (LAST).isoformat(), "page": "/collections/mob", "change_type": "title", "note": "n"}
+    e = {"live_date": (LAST).isoformat(), "page": "/collections/mob", "change_type": "title/meta", "note": "n"}
     e.update(kw)
     assert c.post("/api/journal", json=e).status_code == 200
 
