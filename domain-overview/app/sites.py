@@ -40,7 +40,7 @@ def ensure(base: Path, legacy_db: Path) -> None:
             src.close()
         tmp.replace(target)
     seed = {"slug": "serenity", "name": "serenitybrides.com", "gsc_property": os.environ.get("GSC_SITE_URL", ""),
-            "repo_path": "", "dfs_location": 2826}
+            "repo_path": os.environ.get("SERENITY_REPO_PATH", ""), "dfs_location": 2826}
     reg.write_text(json.dumps([seed], indent=1))
 
 

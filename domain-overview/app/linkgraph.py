@@ -114,7 +114,7 @@ def _key(u: str) -> str:
     return f"{p.scheme}://{p.netloc}{p.path.rstrip('/')}" if p.path.rstrip("/") else f"{p.scheme}://{p.netloc}/"
 
 
-def _anchor(s: str | None) -> str:
+def norm_anchor(s: str | None) -> str:
     return " ".join((s or "").lower().split())
 
 
@@ -132,14 +132,14 @@ def sitewide_links(pages: list[dict], links: list[dict]) -> set[tuple[str, str]]
     srcs: dict[tuple[str, str], set] = defaultdict(set)
     for l in links:
         if l["src"] in ok and l["src"] != l["dst"]:
-            srcs[(l["dst"], _anchor(l["anchor"]))].add(l["src"])
+            srcs[(l["dst"], norm_anchor(l["anchor"]))].add(l["src"])
     return {k for k, s in srcs.items() if len(s) > SITEWIDE_SHARE * len(ok)}
 
 
 def linked_pairs(pages: list[dict], links: list[dict], norm=lambda u: u) -> set[tuple[str, str]]:
     """(src, dst) pairs linked anywhere on the page (pills, related blocks, breadcrumbs), minus the site-wide menu."""
     wide = sitewide_links(pages, links)
-    return {(norm(l["src"]), norm(l["dst"])) for l in links if (l["dst"], _anchor(l["anchor"])) not in wide}
+    return {(norm(l["src"]), norm(l["dst"])) for l in links if (l["dst"], norm_anchor(l["anchor"])) not in wide}
 
 
 def contextual_links(pages: list[dict], links: list[dict]) -> list[dict]:
@@ -147,7 +147,7 @@ def contextual_links(pages: list[dict], links: list[dict]) -> list[dict]:
     wide = sitewide_links(pages, links)
     return [l for l in links
             if l["src"] != l["dst"] and l["placement"] in CONTEXTUAL_PLACEMENTS
-            and (l["dst"], _anchor(l["anchor"])) not in wide]
+            and (l["dst"], norm_anchor(l["anchor"])) not in wide]
 
 
 # --- PageRank -----------------------------------------------------------------
@@ -167,7 +167,7 @@ def pagerank(pages: list[dict], links: list[dict]) -> dict[str, float]:
     if not nodes:
         return {}
     by_key = {_key(p["url"]): p for p in pages}
-    ctx = {(l["src"], l["dst"], _anchor(l["anchor"])) for l in contextual_links(pages, links)}
+    ctx = {(l["src"], l["dst"], norm_anchor(l["anchor"])) for l in contextual_links(pages, links)}
 
     def resolve(u: str) -> str | None:
         """Follow redirects and canonicals to an indexable crawled page, else None."""
@@ -195,7 +195,7 @@ def pagerank(pages: list[dict], links: list[dict]) -> dict[str, float]:
         dst = resolve(l["dst"])
         if dst is None or dst == src:
             continue
-        w = W_CONTEXTUAL if (src, l["dst"], _anchor(l["anchor"])) in ctx else W_BOILERPLATE
+        w = W_CONTEXTUAL if (src, l["dst"], norm_anchor(l["anchor"])) in ctx else W_BOILERPLATE
         edges[(src, dst)] = max(edges.get((src, dst), 0.0), w)
 
     out: dict[str, list[tuple[str, float]]] = defaultdict(list)
@@ -313,7 +313,7 @@ def strength(pages: list[dict], links: list[dict], gsc_pages: list[dict], gsc_ro
     # (this includes breadcrumbs wherever they sit).
     line_links: dict[str, list[str]] = defaultdict(list)
     for l in links:
-        if l["src"] != l["dst"] and (l["dst"], _anchor(l["anchor"])) not in wide and l["placement"] != "footer":
+        if l["src"] != l["dst"] and (l["dst"], norm_anchor(l["anchor"])) not in wide and l["placement"] != "footer":
             line_links[l["src"]].append(l["dst"])
 
     rows = []

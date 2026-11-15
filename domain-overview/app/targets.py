@@ -28,6 +28,8 @@ def ensure_table(con) -> None:
             edited INTEGER NOT NULL DEFAULT 0,
             topic TEXT NOT NULL DEFAULT '')"""
     )
+    con.execute("CREATE TABLE IF NOT EXISTS target_tags (target_id INTEGER NOT NULL, tag TEXT NOT NULL COLLATE NOCASE,"
+                " PRIMARY KEY (target_id, tag))")  # free tags (#28)
     if "topic" not in {r[1] for r in con.execute("PRAGMA table_info(keyword_targets)")}:
         con.execute("ALTER TABLE keyword_targets ADD COLUMN topic TEXT NOT NULL DEFAULT ''")  # rankings label (#26)
 
@@ -112,7 +114,38 @@ def update(con, tid: int, data: dict) -> dict | None:
     return get(con, tid)
 
 
+def tags_of(con, tid: int) -> list[str]:
+    return [r[0] for r in con.execute("SELECT tag FROM target_tags WHERE target_id=? ORDER BY tag", (tid,))]
+
+
+def all_tags(con) -> list[str]:
+    return [r[0] for r in con.execute("SELECT MIN(tag) FROM target_tags GROUP BY tag COLLATE NOCASE ORDER BY 1")]
+
+
+def with_tags(con, rows: list[dict]) -> list[dict]:
+    by: dict[int, list[str]] = {}
+    for tid, tag in con.execute("SELECT target_id, tag FROM target_tags ORDER BY tag"):
+        by.setdefault(tid, []).append(tag)
+    return [{**r, "tags": by.get(r["id"], [])} for r in rows]
+
+
+def add_tag(con, tid: int, tag: str) -> list[str]:
+    tag = " ".join(tag.split())
+    if not tag:
+        raise ValueError("tag is required")
+    con.execute("INSERT OR IGNORE INTO target_tags(target_id, tag) VALUES (?,?)", (tid, tag))
+    con.commit()
+    return tags_of(con, tid)
+
+
+def remove_tag(con, tid: int, tag: str) -> bool:
+    n = con.execute("DELETE FROM target_tags WHERE target_id=? AND tag=?", (tid, tag.strip())).rowcount
+    con.commit()
+    return n > 0
+
+
 def delete(con, tid: int) -> bool:
+    con.execute("DELETE FROM target_tags WHERE target_id=?", (tid,))
     n = con.execute("DELETE FROM keyword_targets WHERE id=?", (tid,)).rowcount
     con.commit()
     return n > 0

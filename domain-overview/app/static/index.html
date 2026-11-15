@@ -62,7 +62,7 @@
 <body>
 <header>
   <h1>SEO tools</h1>
-  <nav style="font-size:14px"><a href="./" style="color:var(--ink);font-weight:600;margin-right:14px;text-decoration:none">Domain overview</a><a href="compare" style="color:var(--muted);text-decoration:none;margin-right:14px">Competitor gap</a><a href="linking" style="color:var(--muted);text-decoration:none;margin-right:14px">Internal linking</a><a href="rankings" style="color:var(--muted);text-decoration:none;margin-right:14px">Rankings</a><a href="targets" style="color:var(--muted);text-decoration:none;margin-right:14px">Keyword targets</a><a href="mappack" style="color:var(--muted);text-decoration:none;margin-right:14px">Map pack</a><a href="digest" style="color:var(--muted);text-decoration:none;margin-right:14px">Digest</a></nav>
+  <nav style="font-size:14px"><a href="./" style="color:var(--ink);font-weight:600;margin-right:14px;text-decoration:none">Domain overview</a><a href="compare" style="color:var(--muted);text-decoration:none;margin-right:14px">Competitor gap</a><a href="linking" style="color:var(--muted);text-decoration:none;margin-right:14px">Internal linking</a><a href="rankings" style="color:var(--muted);text-decoration:none;margin-right:14px">Rankings</a><a href="journal" style="color:var(--muted);text-decoration:none;margin-right:14px">Journal</a><a href="targets" style="color:var(--muted);text-decoration:none;margin-right:14px">Keyword targets</a><a href="mappack" style="color:var(--muted);text-decoration:none;margin-right:14px">Map pack</a><a href="digest" style="color:var(--muted);text-decoration:none;margin-right:14px">Digest</a></nav>
   <form id="f">
     <input name="domain" placeholder="Enter a domain, e.g. serenitybrides.com" autocomplete="off" required>
     <select name="location" title="Database">
@@ -148,7 +148,7 @@ function render(d, hist) {
       <a href="./">All lookups</a>
     </div>
 
-    ${/^(www\.)?serenitybrides\.com$/i.test(d.domain) ? `<div class="err" style="background:var(--accent-bg);border-color:var(--accent-soft);color:var(--ink)">Positions here are DataForSEO Labs estimates. For our own rankings use Search Console (<a href="linking">Internal linking → Strength</a>, <a href="rankings">Rankings</a>, <a href="targets">Keyword targets</a>).</div>` : ""}
+    ${/^(www\.)?serenitybrides\.com$/i.test(d.domain) ? `<div class="err" style="background:var(--accent-bg);border-color:var(--accent-soft);color:var(--ink)">Positions here are DataForSEO Labs estimates. For our own rankings use Search Console (<a href="linking">Internal linking → Strength</a>, <a href="rankings">Rankings</a>, <a href="journal">Journal</a>, <a href="targets">Keyword targets</a>).</div>` : ""}
     <div class="grid tiles">
       <div class="card"><h2>Organic keywords</h2><div class="big">${fmt(h.keywords)}</div>
         <div class="moves"><span class="up">+${fmt(h.new)} new</span><span class="up">▲ ${fmt(h.up)}</span><span class="down">▼ ${fmt(h.down)}</span><span class="down">${fmt(h.lost)} lost</span></div></div>

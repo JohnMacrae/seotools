@@ -7,7 +7,7 @@ import json
 import os
 import re
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, digest, gsc, health, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
+from . import clickstream, compare, crawl, dfs, digest, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -165,9 +165,11 @@ def db() -> sqlite3.Connection:
             con.execute(f"ALTER TABLE suggestions ADD COLUMN {col} {typ}")
     gsc.ensure_tables(con)
     targets.ensure_table(con)
+    journal.ensure_table(con)
     mappack.ensure_tables(con)
     supporting.ensure_tables(con)
     digest.ensure_tables(con)
+    clickstream.ensure_tables(con)
     return con
 
 
@@ -202,18 +204,28 @@ def next_daily_run(now: dt.datetime) -> dt.datetime:
 
 
 def run_daily_job() -> dict:
-    """For every site: Search Console top-up (repo read joins later, #30). One site failing doesn't stop the rest."""
+    """For every site: Search Console top-up, then the journal repo read (#30) when the site has a repo_path.
+    The repo read runs even if the top-up failed. One site failing doesn't stop the rest."""
     out = {}
     for site in sites.load(DB_PATH.parent, DB_PATH):
         token = sites.CURRENT.set(site)
+        errors = []
         try:
             with closing(db()) as con:
-                gsc.sync_store(con)
-            out[site["slug"]] = "ok"
+                try:
+                    gsc.sync_store(con)
+                except Exception as e:  # noqa: BLE001 - logged in the result
+                    errors.append(f"gsc: {e}")
+                if site.get("repo_path"):
+                    try:
+                        journal_repo.sync(con, site["repo_path"])
+                    except Exception as e:  # noqa: BLE001
+                        errors.append(f"repo: {e}")
         except Exception as e:  # noqa: BLE001 - logged in the result, next site still runs
-            out[site["slug"]] = f"error: {e}"[:300]
+            errors.append(str(e))
         finally:
             sites.CURRENT.reset(token)
+        out[site["slug"]] = f"error: {'; '.join(errors)}"[:300] if errors else "ok"
     print(f"daily job {dt.datetime.now(LONDON).isoformat(timespec='seconds')}: {out}", flush=True)
     return out
 
@@ -468,6 +480,11 @@ def linking_page():
 @app.get("/rankings")
 def rankings_page():
     return FileResponse(STATIC / "rankings.html")
+
+
+@app.get("/journal")
+def journal_page():
+    return FileResponse(STATIC / "journal.html")
 
 
 @app.get("/digest")
@@ -1047,44 +1064,187 @@ def targets_delete(tid: int):
     return {"deleted": tid}
 
 
+@contextmanager
+def _journal_errors():
+    """One mapping from journal errors to HTTP statuses for every journal write."""
+    try:
+        yield
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except journal.DuplicateEntry:
+        raise HTTPException(409, "An entry with that ref and page already exists")
+    except PermissionError:
+        raise HTTPException(403, "Repo entries are read-only")
+
+
+@app.get("/api/journal")
+def journal_list():
+    with closing(db()) as con:
+        return {"entries": journal.list_entries(con), "change_types": list(journal.CHANGE_TYPES)}
+
+
+@app.post("/api/journal")
+def journal_create(body: dict):
+    with closing(db()) as con, _journal_errors():
+        return journal.create(con, body)
+
+
+@app.post("/api/journal/sync")
+def journal_sync():
+    """Read the active site's repo now (the 06:00 job does this daily). Free."""
+    site = sites.CURRENT.get() or _site()
+    if not site.get("repo_path"):
+        raise HTTPException(400, "This site has no repo_path")
+    with closing(db()) as con:
+        try:
+            return journal_repo.sync(con, site["repo_path"])
+        except journal_repo.RepoError as e:
+            raise HTTPException(502, str(e))
+
+
+@app.put("/api/journal/{eid}")
+def journal_update(eid: int, body: dict):
+    with closing(db()) as con, _journal_errors():
+        e = journal.update(con, eid, body)
+    if e is None:
+        raise HTTPException(404, "No such entry")
+    return e
+
+
+@app.delete("/api/journal/{eid}")
+def journal_delete(eid: int):
+    with closing(db()) as con, _journal_errors():
+        ok = journal.delete(con, eid)
+    if not ok:
+        raise HTTPException(404, "No such entry")
+    return {"deleted": eid}
+
+
+GSC_SOURCE = "Search Console"
+
+
+def _journal_markers(con: sqlite3.Connection, w: dict, page: str | None = None) -> list[dict]:
+    """Journal entries live in the window (only those covering `page` when given), each with the start of
+    the graph point it sits on as `bucket`. Empty when the store is empty."""
+    if w["range"] is None:
+        return []
+    entries = journal.for_page(con, page) if page else journal.list_entries(con)
+    return [{**e, "bucket": rankings.bucket(dt.date.fromisoformat(e["live_date"]), w["grouping"]).isoformat()}
+            for e in journal.in_range(entries, w["range"]["start"], w["range"]["end"])]
+
+
+def _rankings_window(con: sqlite3.Connection, preset: str, grouping: str | None) -> dict:
+    """The stored Search Console span, the resolved range and interval, and the daily rows in it.
+    range is None when the store is empty. One home for range and interval checks (400 on a bad one)."""
+    st = gsc.store_status(con)
+    first = dt.date.fromisoformat(st["first_day"]) if st["first_day"] else None
+    last = dt.date.fromisoformat(st["last_day"]) if st["last_day"] else None
+    try:
+        rng = rankings.resolve_range(preset, first, last)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    w = {"first_day": st["first_day"], "last_day": st["last_day"], "range": rng, "groupings": [], "grouping": None,
+         "start": None, "end": None, "daily": []}
+    if rng is None:
+        return w
+    a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
+    offered = rankings.groupings(a, b)
+    if grouping is None:
+        grouping = rankings.default_grouping(a, b)
+    elif grouping not in offered:
+        raise HTTPException(400, f"grouping {grouping!r} not offered for this range (offered: {', '.join(offered) or 'none'})")
+    w.update(groupings=offered, grouping=grouping, start=a, end=b, daily=[dict(r) for r in con.execute(
+        "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
+        (rng["start"], rng["end"]))])
+    return w
+
+
 @app.get("/api/rankings")
 def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = None,
                  labels: list[str] = Query(default=[]), movement: str = "all"):
     """Rankings list for the active site: overview series and one row per keyword target over the range.
-    labels: OR within a kind (line:, phase:, topic:, folder:), AND across kinds; movement: all, up or down."""
+    labels: OR within a kind (line:, phase:, topic:, folder:, tag:), AND across kinds; movement: all, up or down."""
     if movement not in rankings.MOVEMENTS:
         raise HTTPException(400, f"movement must be one of {', '.join(rankings.MOVEMENTS)}")
     with closing(db()) as con:
-        st = gsc.store_status(con)
-        first = dt.date.fromisoformat(st["first_day"]) if st["first_day"] else None
-        last = dt.date.fromisoformat(st["last_day"]) if st["last_day"] else None
+        w = _rankings_window(con, range, grouping)
+        tgts = targets.with_tags(con, targets.list_all(con))
+        cs, cslabel = clickstream.load(con)
+        marks = _journal_markers(con, w)
+    all_labels = sorted({lb for t in tgts for lb in rankings.labels(t)})
+    tgts = [t for t in tgts if rankings.label_match(rankings.labels(t), labels)]
+    head = {**{k: w[k] for k in ("first_day", "last_day", "range", "groupings", "grouping")}, "clickstream": cslabel}
+    if w["range"] is None:
+        rows = [{"id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], **rankings.no_data(t, cs)} for t in tgts]
+        return {**head, "labels": all_labels, "overview": [], "journal": [], "rows": rows if movement == "all" else []}
+    rep = rankings.report(w["daily"], tgts, w["start"], w["end"], w["grouping"] or "day", cs)
+    rows = rep["rows"] if movement == "all" else [r for r in rep["rows"] if r["direction"] == movement]
+    return {**head, "labels": all_labels, "overview": rep["overview"], "journal": marks, "rows": rows}
+
+
+@app.get("/api/rankings/{tid}")
+def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping: str | None = None):
+    """Detail for one keyword target: cards, series at the grouping, close-variant table, tags.
+    gsc names the source and as-of date of the impressions and clicks."""
+    with closing(db()) as con:
+        t = targets.get(con, tid)
+        if t is None:
+            raise HTTPException(404, "No such target")
+        t["tags"] = targets.tags_of(con, tid)
+        cs, cslabel = clickstream.load(con)
+        w = _rankings_window(con, range, grouping)
+        marks = _journal_markers(con, w, t["path"])
+    head = {"range": w["range"], "groupings": w["groupings"], "grouping": w["grouping"],
+            "gsc": {"source": GSC_SOURCE, "as_of": w["last_day"]}, "journal": marks, "clickstream": cslabel}
+    if w["range"] is None:
+        return {**rankings.detail_no_data(t, cs), **head}
+    return {**rankings.detail(w["daily"], t, w["start"], w["end"], w["grouping"] or "day", cs), **head}
+
+
+def _target_keywords(con) -> list[str]:
+    return [t["primary_keyword"] for t in targets.list_all(con)]
+
+
+@app.get("/api/clickstream/estimate")
+def api_clickstream_estimate():
+    """Cost of fetching clickstream volume for target keywords not cached in the last 30 days. Makes no paid call."""
+    with closing(db()) as con:
+        return clickstream.estimate(con, _target_keywords(con))
+
+
+@app.post("/api/clickstream")
+async def api_clickstream_fetch():
+    """Paid: fetch clickstream volume for the keyword targets not cached in the last 30 days."""
+    with closing(db()) as con:
         try:
-            rng = rankings.resolve_range(range, first, last)
+            return await clickstream.fetch(con, _target_keywords(con))
+        except (dfs.DFSError, httpx.HTTPError) as e:
+            raise HTTPException(502, f"DataForSEO: {e}")
+
+
+@app.get("/api/tags")
+def api_tags():
+    with closing(db()) as con:
+        return {"tags": targets.all_tags(con)}
+
+
+@app.post("/api/targets/{tid}/tags")
+def api_tag_add(tid: int, body: dict):
+    with closing(db()) as con:
+        if targets.get(con, tid) is None:
+            raise HTTPException(404, "No such target")
+        try:
+            return {"tags": targets.add_tag(con, tid, str(body.get("tag") or ""))}
         except ValueError as e:
             raise HTTPException(400, str(e))
-        tgts = targets.list_all(con)
-        all_labels = sorted({lb for t in tgts for lb in rankings.labels(t)})
-        tgts = [t for t in tgts if rankings.label_match(rankings.labels(t), labels)]
-        if rng is None:
-            rows = [{"id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], "labels": rankings.labels(t),
-                     "volume": t.get("volume"), "clicks": 0, "impressions": 0, "top_url": None,
-                     "top_url_off_target": None, "current": None, "start": None, "movement": None, "direction": None,
-                     "period_avg": None, "no_data": True, "series": []} for t in tgts]
-            return {"first_day": None, "last_day": None, "range": None, "groupings": [], "grouping": None,
-                    "labels": all_labels, "overview": [], "rows": rows if movement == "all" else []}
-        a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
-        offered = rankings.groupings(a, b)
-        if grouping is None:
-            grouping = rankings.default_grouping(a, b)
-        elif grouping not in offered:
-            raise HTTPException(400, f"grouping {grouping!r} not offered for this range (offered: {', '.join(offered) or 'none'})")
-        daily = [dict(r) for r in con.execute(
-            "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
-            (rng["start"], rng["end"]))]
-    rep = rankings.report(daily, tgts, a, b, grouping or "day")
-    rows = rep["rows"] if movement == "all" else [r for r in rep["rows"] if r["direction"] == movement]
-    return {"first_day": st["first_day"], "last_day": st["last_day"], "range": rng, "groupings": offered,
-            "grouping": grouping, "labels": all_labels, "overview": rep["overview"], "rows": rows}
+
+
+@app.delete("/api/targets/{tid}/tags/{tag}")
+def api_tag_remove(tid: int, tag: str):
+    with closing(db()) as con:
+        if not targets.remove_tag(con, tid, tag):
+            raise HTTPException(404, "No such tag on this target")
+        return {"tags": targets.tags_of(con, tid)}
 
 
 @app.get("/api/spend-status")

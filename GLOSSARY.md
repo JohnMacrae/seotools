@@ -96,7 +96,7 @@ A website the rank tracker covers, with its own Search Console property, keyword
 _Avoid_: property (that is Search Console's term), domain, project
 
 **Journal entry**:
-A record that a page, or every page matching a URL pattern (a template change), changed on a site: the live date, the page or pattern, a change type (new page, copy, headings, title/meta, internal links, technical) and a one-line note. It comes from the site's repo or is added by hand for changes made off-site.
+A record that a page, or every page matching a URL pattern (a template change), changed on a site: the live date, the page or pattern, a change type (new page, copy, headings, title/meta, internal links, technical; off-site: backlinks, GBP) and a one-line note. It comes from the site's repo or is added by hand for changes made off-site.
 _Avoid_: log, change note, annotation
 
 **Live date**:
@@ -107,11 +107,14 @@ _Avoid_: change date, commit date, deploy date
 
 **Clicks lost**: estimated clicks a query is missing in the last 28 data days. Low-CTR query: impressions × expected CTR for its position − clicks. Page-2 query: impressions × 5% (position-5 CTR) − clicks, floored at 0. An estimate for ranking opportunities, not a measured figure.
 
+**Clickstream volume**:
+DataForSEO's clickstream estimate of monthly searches for a keyword target's primary keyword, shown on `/rankings` beside Ads volume (which stays the sort key). Paid, fetched on request with **Fetch clickstream**, cached 30 days per keyword; labelled with its source and the oldest cached fetch date.
+
 **Decaying page**:
 A page whose clicks in the last 28 data days fell by at least 30% and at least 5 clicks against either the previous 28 days or the same 28 days a year earlier (364 days back). "No data" when Search Console has no rows for that window (the property's data starts 2026-09-13).
 
 **Digest**:
-Weekly review page (UI only) built from Search Console data; the only paid call is the optional Fetch volumes button (search volume, cached 30 days).
+Weekly review page (UI only) built from Search Console data; its only paid call is the optional Fetch volumes button (search volume, cached 30 days).
 
 **Intent (booking / sales)**: a digest query's intent from whole-word term lists in `app/digest.py` (`INTENT_TERMS`): booking = book, booking, appointment, near me, shop, shops, store, boutique, colchester, essex, visit, opening; sales = buy, price, prices, cost, sale, sales, cheap, affordable, under, discount, outlet, sample. A query can have both or neither.
 

@@ -14,13 +14,14 @@ import datetime as dt
 from urllib.parse import urlsplit
 
 from . import match
+from .clickstream import norm_keyword
 
 PRESETS = ("all", "12m", "6m", "3m", "30d", "12w", "7d")
 DEFAULT_PRESET = "3m"
 GROUPINGS = ("day", "week", "month")
 MOVEMENTS = ("all", "up", "down")
 WINDOW = 7  # data days for current and period-start positions
-LABEL_KINDS = ("line", "phase", "topic", "folder")
+LABEL_KINDS = ("line", "phase", "topic", "folder", "tag")
 
 
 # ---------------------------------------------------------------- range and grouping
@@ -52,7 +53,8 @@ def resolve_range(preset: str, first_day: dt.date | None, last_day: dt.date | No
     return {"preset": preset, "start": max(start, first_day).isoformat(), "end": end.isoformat(), "clamped": clamped}
 
 
-def _bucket(d: dt.date, grouping: str) -> dt.date:
+def bucket(d: dt.date, grouping: str) -> dt.date:
+    """Start of the graph point (day, week or month) that holds day d."""
     if grouping == "week":
         return d - dt.timedelta(days=d.weekday())
     if grouping == "month":
@@ -63,7 +65,7 @@ def _bucket(d: dt.date, grouping: str) -> dt.date:
 def buckets(start: dt.date, end: dt.date, grouping: str) -> list[dt.date]:
     out, d = [], start
     while d <= end:
-        b = _bucket(d, grouping)
+        b = bucket(d, grouping)
         if not out or out[-1] != b:
             out.append(b)
         d += dt.timedelta(days=1)
@@ -104,6 +106,7 @@ def labels(target: dict) -> list[str]:
     if (target.get("topic") or "").strip():
         out.append(f"topic:{target['topic'].strip()}")
     out.append(f"folder:{folder(target['path'])}")
+    out += [f"tag:{t}" for t in target.get("tags") or []]
     return out
 
 
@@ -132,7 +135,8 @@ def _variant_rows(daily: list[dict], target: dict) -> list[dict]:
     return [r for r in daily if any(match.same_variant(r["query"], k) for k in kws)]
 
 
-def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date, grouping: str) -> dict:
+def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date, grouping: str,
+           clickstream: dict[str, int] | None = None) -> dict:
     """daily: {date (ISO), query, page, clicks, impressions, position} rows (any dates; only start..end used).
     Returns {rows: one per target, overview: [{start, position}] = mean of the targets' bucket positions}."""
     s, e = start.isoformat(), end.isoformat()
@@ -152,11 +156,13 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
         mv = None if cur is None or st is None else st - cur
         per: dict[dt.date, list] = {}
         for r in vr:
-            per.setdefault(_bucket(dt.date.fromisoformat(r["date"]), grouping), []).append(r)
+            per.setdefault(bucket(dt.date.fromisoformat(r["date"]), grouping), []).append(r)
         imps = sum(r["impressions"] for r in vr)
         rows.append({
             "id": t["id"], "keyword": t["primary_keyword"], "path": t["path"], "labels": labels(t),
-            "volume": t.get("volume"), "clicks": sum(r["clicks"] for r in vr), "impressions": imps,
+            "volume": t.get("volume"),
+            "clickstream_volume": _clickstream_volume(clickstream, t),
+            "clicks": sum(r["clicks"] for r in vr), "impressions": imps,
             "top_url": top, "top_url_off_target": None if top is None else _path(top) != _path(t["path"]),
             "current": _r(cur), "start": _r(st), "movement": _r(mv),
             "direction": None if mv is None else "up" if mv > 0 else "down" if mv < 0 else "flat",
@@ -171,3 +177,49 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
     for r in rows:
         del r["_raw"]
     return {"rows": rows, "overview": overview}
+
+
+def _clickstream_volume(clickstream: dict[str, int] | None, target: dict) -> int | None:
+    return (clickstream or {}).get(norm_keyword(target["primary_keyword"]))
+
+
+def no_data(target: dict, clickstream: dict[str, int] | None = None) -> dict:
+    """A list row's figures when the Search Console store is empty: everything missing, never 0 (ADR 0002)."""
+    return {"labels": labels(target), "volume": target.get("volume"),
+            "clickstream_volume": _clickstream_volume(clickstream, target),
+            "clicks": None, "impressions": None,
+            "top_url": None, "top_url_off_target": None, "current": None, "start": None, "movement": None,
+            "direction": None, "period_avg": None, "no_data": True, "series": []}
+
+
+def _cards(row: dict, target: dict) -> dict:
+    cards = {k: row[k] for k in ("current", "start", "movement", "direction", "period_avg", "clicks", "impressions", "no_data")}
+    cards["ads_volume"] = target.get("volume")
+    cards["clickstream_volume"] = row["clickstream_volume"]
+    return cards
+
+
+def detail_no_data(target: dict, clickstream: dict[str, int] | None = None) -> dict:
+    """detail() for an empty Search Console store."""
+    row = no_data(target, clickstream)
+    return {"id": target["id"], "keyword": target["primary_keyword"], "path": target["path"], "labels": row["labels"],
+            "tags": list(target.get("tags") or []), "cards": _cards(row, target), "series": [], "variants": [],
+            "top_url": None, "top_url_off_target": None}
+
+
+def detail(daily: list[dict], target: dict, start: dt.date, end: dt.date, grouping: str,
+           clickstream: dict[str, int] | None = None) -> dict:
+    """One target over the range (#28): cards, series at the grouping and a table of its close-variant queries,
+    each with its own impressions, clicks and impression-weighted position (queries differing only in case merge)."""
+    row = report(daily, [target], start, end, grouping, clickstream)["rows"][0]
+    s, e = start.isoformat(), end.isoformat()
+    vr = _variant_rows([r for r in daily if s <= r["date"] <= e], target)
+    per: dict[str, list] = {}
+    for r in vr:
+        per.setdefault(r["query"].strip().lower(), []).append(r)
+    variants = sorted(({"query": q, "impressions": sum(r["impressions"] for r in rs), "clicks": sum(r["clicks"] for r in rs),
+                        "position": _r(_wavg(rs))} for q, rs in per.items()),
+                      key=lambda v: (-v["impressions"], v["query"]))
+    return {"id": target["id"], "keyword": target["primary_keyword"], "path": target["path"], "labels": row["labels"],
+            "tags": list(target.get("tags") or []), "cards": _cards(row, target), "series": row["series"], "variants": variants,
+            "top_url": row["top_url"], "top_url_off_target": row["top_url_off_target"]}

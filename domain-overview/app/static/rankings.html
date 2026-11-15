@@ -6,10 +6,10 @@
 <title>Rankings</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
-  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
+  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --warn: #e3742f; --radius: 10px;
     --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
     color-scheme: light dark; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --warn: #f0a060; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
 
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
@@ -30,6 +30,11 @@
   code { background: var(--subtle); padding: 0 4px; border-radius: 4px; }
   h2 { font-size: 15px; margin: 0 0 6px; }
 
+  button.ghost { background: var(--card); color: var(--ink); border-color: var(--line); }
+  .strip { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; min-width: 120px; }
+  .stat b { display: block; font-size: 20px; } .stat span { color: var(--muted); font-size: 12px; }
+  h3 { font-size: 14px; margin: 14px 0 4px; }
   .chart { position: relative; height: 280px; }
   .kind { white-space: nowrap; } .kind label { margin-left: 6px; }
   .up { color: #2e8b57; font-weight: 600; } .down { color: var(--bad); font-weight: 600; } .flat { color: var(--muted); }
@@ -42,7 +47,7 @@
 </head>
 <body>
 <header>
-  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="rankings" class="on">Rankings</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a></nav></div>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="rankings" class="on">Rankings</a><a href="journal">Journal</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a></nav></div>
 </header>
 <main>
   <div id="err"></div>
@@ -53,12 +58,15 @@
     <label>Sort <select id="sort">
       <option value="moved">Most moved</option><option value="top">Top ranks</option>
       <option value="volume">Ads volume</option><option value="clicks">Clicks</option></select></label>
+    <button id="fetchcs" class="ghost">Fetch clickstream (paid)</button><span class="spend-light" data-feature="clickstream"></span><span class="sub" id="csmsg"></span>
   </div>
   <div class="bar" id="lblwrap"></div>
   <div class="sub" id="note" style="margin-bottom:10px"></div>
   <div class="card"><h2 style="margin:0 0 6px;font-size:15px">Average position of the targets <span class="sub">(lower is better; gaps = no data)</span></h2>
     <div class="chart"><canvas id="ov"></canvas></div></div>
+  <div class="sub" id="ovnote"></div>
   <div class="card"><div id="tbl"></div></div>
+  <div class="card" id="detail" hidden></div>
 </main>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
@@ -68,6 +76,30 @@ const $ = id => document.getElementById(id);
 const PRESETS = {all:"All data","12m":"12 months","6m":"6 months","3m":"3 months","30d":"30 days","12w":"12 weeks","7d":"7 days"};
 const state = {range: "3m", grouping: null, movement: "all", sort: "moved", labels: new Set(), data: null, volumeSource: "Google Ads UK monthly, keyword targets doc"};
 let chart = null;
+const csDate = () => { const f = state.data && state.data.clickstream && state.data.clickstream.fetched_at; return f ? f.slice(0, 10) : "not fetched"; };
+function csLabel(cs) {
+  cs = cs || (state.data && state.data.clickstream) || {};
+  return (cs.source || "DataForSEO clickstream") + (cs.fetched_at ? ", oldest fetch " + cs.fetched_at.slice(0, 10) : ", not fetched yet");
+}
+const getJSON = async (url, opts) => {
+  const r = await fetch(url, opts), j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || `${r.status}`);
+  return j;
+};
+$("fetchcs").onclick = async () => {
+  let e;
+  try { e = await getJSON("api/clickstream/estimate"); }
+  catch (err) { showError(`Clickstream estimate failed: ${err.message}`); return; }
+  if (!e.keywords) { $("csmsg").textContent = "Nothing to fetch: all " + e.cached + " keywords cached (30 days)."; return; }
+  if (!confirm(`Fetch clickstream volume for ${e.keywords} keywords (${e.cached} cached)?\nEstimated cost: $${e.cost.toFixed(4)}`)) return;
+  $("csmsg").textContent = "Fetching\u2026";
+  let j;
+  try { j = await getJSON("api/clickstream", {method: "POST"}); }
+  catch (err) { $("csmsg").textContent = ""; showError(`Clickstream fetch failed: ${err.message}`); return; }
+  $("csmsg").textContent = `Fetched ${j.fetched} keywords, cost $${j.cost.toFixed(4)}.`;
+  window.spendLights && window.spendLights.refresh();
+  load();
+};
 const pos = n => n == null ? "–" : n.toFixed(1);
 const kindOf = label => label.split(":")[0];
 
@@ -77,6 +109,7 @@ function query() {
   state.labels.forEach(l => p.append("labels", l));
   return p;
 }
+const num = v => v == null ? "\u2013" : v.toLocaleString();  // missing shows as missing, never 0
 function showError(msg) { $("err").innerHTML = `<div class="err">${esc(msg)}</div>`; }
 async function loadVolumeSource() {
   // ADR 0002: the Ads volume figure is labelled with its source and date (the targets doc's as-of).
@@ -92,6 +125,7 @@ async function load() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { showError(j.detail || `Rankings failed (${r.status})`); return; }
     state.data = j; state.grouping = j.grouping; draw();
+    if (dcur != null && !$("detail").hidden) openDetail(dcur, false);  // keep an open detail on the same range
   } catch (e) { showError(`Rankings failed to load: ${e.message}`); }
 }
 function arrow(row) {
@@ -105,7 +139,7 @@ const SORT_KEYS = {  // larger sorts first; rows without a value go last
   moved: r => r.movement == null ? -Infinity : Math.abs(r.movement),
   top: r => r.current == null ? -Infinity : -r.current,
   volume: r => r.volume ?? -Infinity,
-  clicks: r => r.clicks};
+  clicks: r => r.clicks ?? -Infinity};
 function sorted(rows) {
   const key = SORT_KEYS[state.sort];
   return rows.slice().sort((a, b) => (key(b) > key(a)) - (key(b) < key(a)) || a.keyword.localeCompare(b.keyword));
@@ -125,7 +159,7 @@ function draw() {
   drawLabelFilter(kinds);
   $("note").textContent = (d.range
     ? `Search Console data from ${d.range.start} to ${d.range.end}` + (d.range.clamped ? ` (data from ${d.first_day}, so the range is shorter than requested)` : "") + ". Positions are impression-weighted."
-    : "No Search Console data stored yet.") + ` Ads volume: ${state.volumeSource}.`;
+    : "No Search Console data stored yet.") + ` Ads volume: ${state.volumeSource}. Clickstream: ${csLabel()}.`;
   drawChart(d); drawTable(d, kinds);
 }
 function drawLabelFilter(kinds) {
@@ -135,27 +169,110 @@ function drawLabelFilter(kinds) {
     c.checked ? state.labels.add(c.value) : state.labels.delete(c.value); load();
   });
 }
+// Journal markers (#31): a dashed vertical line at the graph point holding each entry (the API's `bucket`);
+// red for an exact live date, amber for an approximate one; hover a line for the note.
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function lineChart(canvas, points, label, entries) {
+  const accent = cssVar("--accent"), exact = cssVar("--bad"), approx = cssVar("--warn");
+  const starts = points.map(p => p.start);
+  const marks = entries.map(e => ({e, i: starts.indexOf(e.bucket)})).filter(m => m.i >= 0);
+  const tip = (ch, ev) => {
+    const hit = marks.filter(m => Math.abs(ch.scales.x.getPixelForValue(m.i) - ev.offsetX) < 5);
+    ch.canvas.title = hit.map(({e}) => `${e.live_date}${e.approx ? " (approx)" : ""} ${e.change_type}: ${e.page}${e.note ? " \u2013 " + e.note : ""}`).join("\n");
+  };
+  const markers = {id: "journal", afterDatasetsDraw(ch) {
+    const {ctx, chartArea: area, scales: {x}} = ch;
+    ctx.save(); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+    marks.forEach(m => { const px = x.getPixelForValue(m.i);
+      ctx.strokeStyle = m.e.approx ? approx : exact;
+      ctx.beginPath(); ctx.moveTo(px, area.top); ctx.lineTo(px, area.bottom); ctx.stroke(); });
+    ctx.restore();
+  }};
+  return new Chart(canvas, {type: "line",
+    data: {labels: starts, datasets: [{label, data: points.map(p => p.position),
+      borderColor: accent, backgroundColor: accent, spanGaps: false, tension: 0.2, pointRadius: 2}]},
+    options: {maintainAspectRatio: false, onHover: (ev, _a, ch) => tip(ch, ev), plugins: {legend: {display: false}},
+      scales: {y: {reverse: true, title: {display: true, text: "Position"}}}},
+    plugins: [markers]});
+}
+function markerNote(entries) {
+  return entries.length ? ` Dashed lines mark journal entries (${entries.length}): red for an exact live date, amber for an approximate one; hover a line for details.` : "";
+}
 function drawChart(d) {
   if (chart) chart.destroy();
   chart = null;
   if (typeof Chart === "undefined") { showError("Chart library failed to load; the table below is still current."); return; }
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-  chart = new Chart($("ov"), {type: "line",
-    data: {labels: d.overview.map(p => p.start), datasets: [{label: "Average position", data: d.overview.map(p => p.position),
-      borderColor: accent, backgroundColor: accent, spanGaps: false, tension: 0.2, pointRadius: 2}]},
-    options: {maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}}});
+  chart = lineChart($("ov"), d.overview, "Average position", d.journal);
+  $("ovnote").textContent = markerNote(d.journal);
 }
 function drawTable(d, kinds) {
   const rows = sorted(d.rows);
   if (!rows.length) { $("tbl").innerHTML = `<div class="sub">No keyword targets match.</div>`; return; }
   $("tbl").innerHTML = `<table><thead><tr><th>Keyword</th><th>Labels</th><th class="n">Position now</th><th class="n">Movement</th>
-    <th class="n">Period avg</th><th class="n" title="${esc(state.volumeSource)}">Ads volume</th><th class="n">Clicks</th><th>Top URL</th></tr></thead><tbody>` +
-    rows.map(r => `<tr><td>${esc(r.keyword)}<div class="sub">${esc(r.path)}</div></td>
+    <th class="n">Period avg</th><th class="n" title="${esc(state.volumeSource)}">Ads volume</th><th class="n" title="${esc(csLabel())}">Clickstream<div class="sub">${esc(csDate())}</div></th><th class="n">Clicks</th><th>Top URL</th></tr></thead><tbody>` +
+    rows.map(r => `<tr class="rowlink" data-id="${r.id}" style="cursor:pointer"><td>${esc(r.keyword)}<div class="sub">${esc(r.path)}</div></td>
       <td>${r.labels.filter(l => kindOf(l) in kinds).map(l => `<span class="lbl">${esc(l)}</span>`).join("")}</td>
       <td class="n">${r.no_data ? '<span class="sub">no data</span>' : pos(r.current)}</td><td class="n">${arrow(r)}</td>
-      <td class="n">${pos(r.period_avg)}</td><td class="n">${r.volume == null ? "–" : r.volume.toLocaleString()}</td>
-      <td class="n">${r.clicks.toLocaleString()}</td>
-      <td>${r.top_url ? esc(r.top_url) + (r.top_url_off_target ? ' <span class="off" title="Google ranks a different page than the target">off target</span>' : "") : "–"}</td></tr>`).join("") + "</tbody></table>";
+      <td class="n">${pos(r.period_avg)}</td><td class="n">${num(r.volume)}</td>
+      <td class="n">${num(r.clickstream_volume)}</td>
+      <td class="n">${num(r.clicks)}</td>
+      <td>${r.top_url ? esc(r.top_url) + (r.top_url_off_target ? ' <span class="off" title="Google ranks a different page than the target">off target</span>' : "") : "\u2013"}</td></tr>`).join("") + "</tbody></table>";
+  $("tbl").querySelectorAll("tr.rowlink").forEach(tr => tr.onclick = () => openDetail(+tr.dataset.id));
+}
+let dchart = null, dcur = null;
+const gscLabel = (g, what) => `${g.source} ${what}${g.as_of ? ", data to " + g.as_of : ""}`;
+async function openDetail(id, scroll = true) {
+  dcur = id;
+  const p = new URLSearchParams({range: state.range});
+  if (state.grouping) p.set("grouping", state.grouping);
+  let r, d;
+  try { r = await fetch(`api/rankings/${id}?` + p); d = await r.json().catch(() => ({})); }
+  catch (e) { showError(`Detail failed to load: ${e.message}`); return; }
+  if (!r.ok) { showError(d.detail || `Detail failed (${r.status})`); return; }
+  drawDetail(d);
+  if (scroll) $("detail").scrollIntoView({behavior: "smooth"});
+}
+function drawDetail(d) {
+  const c = d.cards, box = $("detail");
+  box.hidden = false;
+  const card = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
+  box.innerHTML = `<div class="bar"><h2 style="margin:0">${esc(d.keyword)} <span class="sub">${esc(d.path)}</span></h2>
+      <button class="ghost" id="dclose">Close</button></div>
+    <div class="strip">${card(c.no_data ? "no data" : pos(c.current), "Position now")}${card(arrow(c), "Movement")}
+      ${card(pos(c.period_avg), "Period average")}
+      ${card(num(c.ads_volume), "Ads volume (" + esc(state.volumeSource) + ")")}
+      ${card(num(c.clickstream_volume), "Clickstream volume (" + esc(csLabel(d.clickstream)) + ")")}
+      ${card(num(c.impressions), gscLabel(d.gsc, "impressions (all close variants)"))}
+      ${card(num(c.clicks), gscLabel(d.gsc, "clicks"))}</div>
+    <div class="chart"><canvas id="dch"></canvas></div>
+    <div class="sub">${markerNote(d.journal).trim()}</div>
+    <h3>Free tags</h3>
+    <div id="dtags">${d.tags.map(t => `<span class="lbl">${esc(t)} <a href="#" data-rm="${esc(t)}" title="Remove free tag">\u00d7</a></span>`).join("") || '<span class="sub">No free tags yet.</span>'}</div>
+    <div class="bar" style="margin-top:6px"><input id="newtag" placeholder="Add a free tag, e.g. Services" list="taglist"><datalist id="taglist"></datalist><button id="addtag">Add</button></div>
+    <h3>Close variants</h3>
+    <table><thead><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">Position</th></tr></thead><tbody>` +
+    (d.variants.map(v => `<tr><td>${esc(v.query)}</td><td class="n">${v.impressions.toLocaleString()}</td><td class="n">${v.clicks.toLocaleString()}</td><td class="n">${pos(v.position)}</td></tr>`).join("")
+      || `<tr><td colspan="4" class="sub">No queries in this range.</td></tr>`) + "</tbody></table>";
+  $("dclose").onclick = () => { box.hidden = true; };
+  if (dchart) dchart.destroy();
+  dchart = null;
+  if (typeof Chart === "undefined") return;
+  dchart = lineChart($("dch"), d.series, "Position", d.journal);
+  fetch("api/tags").then(async r => {
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || r.status);
+    $("taglist").innerHTML = j.tags.map(t => `<option value="${esc(t)}">`).join("");
+  }).catch(e => showError(`Free tag list failed to load: ${e.message}`));
+  const edit = async (url, method, body) => {
+    let r;
+    try { r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body && JSON.stringify(body)}); }
+    catch (e) { showError(`Free tag change failed: ${e.message}`); return; }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); showError(j.detail || `Free tag change failed (${r.status})`); return; }
+    await load();  // redraws the list and the open detail
+  };
+  $("addtag").onclick = () => edit(`api/targets/${d.id}/tags`, "POST", {tag: $("newtag").value});
+  $("newtag").onkeydown = e => { if (e.key === "Enter") $("addtag").click(); };
+  box.querySelectorAll("[data-rm]").forEach(a => a.onclick = e => { e.preventDefault(); edit(`api/targets/${d.id}/tags/${encodeURIComponent(a.dataset.rm)}`, "DELETE"); });
 }
 $("range").onchange = e => { state.range = e.target.value; state.grouping = null; load(); };
 $("grouping").onchange = e => { state.grouping = e.target.value; load(); };
