@@ -101,6 +101,7 @@ function query() {
   state.labels.forEach(l => p.append("labels", l));
   return p;
 }
+const num = v => v == null ? "\u2013" : v.toLocaleString();  // missing shows as missing, never 0
 function showError(msg) { $("err").innerHTML = `<div class="err">${esc(msg)}</div>`; }
 async function loadVolumeSource() {
   // ADR 0002: the Ads volume figure is labelled with its source and date (the targets doc's as-of).
@@ -116,6 +117,7 @@ async function load() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { showError(j.detail || `Rankings failed (${r.status})`); return; }
     state.data = j; state.grouping = j.grouping; draw();
+    if (dcur != null && !$("detail").hidden) openDetail(dcur, false);  // keep an open detail on the same range
   } catch (e) { showError(`Rankings failed to load: ${e.message}`); }
 }
 function arrow(row) {
@@ -129,7 +131,7 @@ const SORT_KEYS = {  // larger sorts first; rows without a value go last
   moved: r => r.movement == null ? -Infinity : Math.abs(r.movement),
   top: r => r.current == null ? -Infinity : -r.current,
   volume: r => r.volume ?? -Infinity,
-  clicks: r => r.clicks};
+  clicks: r => r.clicks ?? -Infinity};
 function sorted(rows) {
   const key = SORT_KEYS[state.sort];
   return rows.slice().sort((a, b) => (key(b) > key(a)) - (key(b) < key(a)) || a.keyword.localeCompare(b.keyword));
@@ -202,14 +204,15 @@ function drawTable(d, kinds) {
     rows.map(r => `<tr class="rowlink" data-id="${r.id}" style="cursor:pointer"><td>${esc(r.keyword)}<div class="sub">${esc(r.path)}</div></td>
       <td>${r.labels.filter(l => kindOf(l) in kinds).map(l => `<span class="lbl">${esc(l)}</span>`).join("")}</td>
       <td class="n">${r.no_data ? '<span class="sub">no data</span>' : pos(r.current)}</td><td class="n">${arrow(r)}</td>
-      <td class="n">${pos(r.period_avg)}</td><td class="n">${r.volume == null ? "\u2013" : r.volume.toLocaleString()}</td>
-      <td class="n">${r.clickstream_volume == null ? "\u2013" : r.clickstream_volume.toLocaleString()}</td>
-      <td class="n">${r.clicks.toLocaleString()}</td>
+      <td class="n">${pos(r.period_avg)}</td><td class="n">${num(r.volume)}</td>
+      <td class="n">${num(r.clickstream_volume)}</td>
+      <td class="n">${num(r.clicks)}</td>
       <td>${r.top_url ? esc(r.top_url) + (r.top_url_off_target ? ' <span class="off" title="Google ranks a different page than the target">off target</span>' : "") : "\u2013"}</td></tr>`).join("") + "</tbody></table>";
   $("tbl").querySelectorAll("tr.rowlink").forEach(tr => tr.onclick = () => openDetail(+tr.dataset.id));
 }
 let dchart = null, dcur = null;
-async function openDetail(id) {
+const gscLabel = (g, what) => `${g.source} ${what}${g.as_of ? ", data to " + g.as_of : ""}`;
+async function openDetail(id, scroll = true) {
   dcur = id;
   const p = new URLSearchParams({range: state.range});
   if (state.grouping) p.set("grouping", state.grouping);
@@ -218,7 +221,7 @@ async function openDetail(id) {
   catch (e) { showError(`Detail failed to load: ${e.message}`); return; }
   if (!r.ok) { showError(d.detail || `Detail failed (${r.status})`); return; }
   drawDetail(d);
-  $("detail").scrollIntoView({behavior: "smooth"});
+  if (scroll) $("detail").scrollIntoView({behavior: "smooth"});
 }
 function drawDetail(d) {
   const c = d.cards, box = $("detail");
@@ -228,15 +231,15 @@ function drawDetail(d) {
       <button class="ghost" id="dclose">Close</button></div>
     <div class="strip">${card(c.no_data ? "no data" : pos(c.current), "Position now")}${card(arrow(c), "Movement")}
       ${card(pos(c.period_avg), "Period average")}
-      ${card(c.ads_volume == null ? "\u2013" : c.ads_volume.toLocaleString(), "Ads volume (" + esc(state.volumeSource) + ")")}
-      ${card(c.clickstream_volume == null ? "\u2013" : c.clickstream_volume.toLocaleString(), "Clickstream volume (" + esc(csLabel(d.clickstream)) + ")")}
-      ${card(c.impressions.toLocaleString(), "Search Console impressions (all close variants)")}
-      ${card(c.clicks.toLocaleString(), "Clicks")}</div>
+      ${card(num(c.ads_volume), "Ads volume (" + esc(state.volumeSource) + ")")}
+      ${card(num(c.clickstream_volume), "Clickstream volume (" + esc(csLabel(d.clickstream)) + ")")}
+      ${card(num(c.impressions), gscLabel(d.gsc, "impressions (all close variants)"))}
+      ${card(num(c.clicks), gscLabel(d.gsc, "clicks"))}</div>
     <div class="chart"><canvas id="dch"></canvas></div>
     <div class="sub">${markerNote(d.journal || []).trim()}</div>
-    <h3>Tags</h3>
-    <div id="dtags">${d.tags.map(t => `<span class="lbl">${esc(t)} <a href="#" data-rm="${esc(t)}" title="Remove tag">\u00d7</a></span>`).join("") || '<span class="sub">No tags yet.</span>'}</div>
-    <div class="bar" style="margin-top:6px"><input id="newtag" placeholder="Add a tag, e.g. Services" list="taglist"><datalist id="taglist"></datalist><button id="addtag">Add</button></div>
+    <h3>Free tags</h3>
+    <div id="dtags">${d.tags.map(t => `<span class="lbl">${esc(t)} <a href="#" data-rm="${esc(t)}" title="Remove free tag">\u00d7</a></span>`).join("") || '<span class="sub">No free tags yet.</span>'}</div>
+    <div class="bar" style="margin-top:6px"><input id="newtag" placeholder="Add a free tag, e.g. Services" list="taglist"><datalist id="taglist"></datalist><button id="addtag">Add</button></div>
     <h3>Close variants</h3>
     <table><thead><tr><th>Query</th><th class="n">Impressions</th><th class="n">Clicks</th><th class="n">Position</th></tr></thead><tbody>` +
     (d.variants.map(v => `<tr><td>${esc(v.query)}</td><td class="n">${v.impressions.toLocaleString()}</td><td class="n">${v.clicks.toLocaleString()}</td><td class="n">${pos(v.position)}</td></tr>`).join("")
@@ -251,11 +254,17 @@ function drawDetail(d) {
       borderColor: accent, backgroundColor: accent, spanGaps: false, tension: 0.2, pointRadius: 2}]},
     options: {maintainAspectRatio: false, onHover: (ev, _a, ch) => markerTip(ch, ev), plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}},
     plugins: [markerPlugin(d.series.map(p => p.start), d.journal || [])]});
-  fetch("api/tags").then(r => r.json()).then(j => { $("taglist").innerHTML = j.tags.map(t => `<option value="${esc(t)}">`).join(""); });
+  fetch("api/tags").then(async r => {
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || r.status);
+    $("taglist").innerHTML = j.tags.map(t => `<option value="${esc(t)}">`).join("");
+  }).catch(e => showError(`Free tag list failed to load: ${e.message}`));
   const edit = async (url, method, body) => {
-    const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body && JSON.stringify(body)});
-    if (!r.ok) { const j = await r.json().catch(() => ({})); showError(j.detail || `Tag change failed (${r.status})`); return; }
-    await load(); openDetail(d.id);
+    let r;
+    try { r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body && JSON.stringify(body)}); }
+    catch (e) { showError(`Free tag change failed: ${e.message}`); return; }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); showError(j.detail || `Free tag change failed (${r.status})`); return; }
+    await load();  // redraws the list and the open detail
   };
   $("addtag").onclick = () => edit(`api/targets/${d.id}/tags`, "POST", {tag: $("newtag").value});
   $("newtag").onkeydown = e => { if (e.key === "Enter") $("addtag").click(); };

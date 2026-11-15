@@ -176,6 +176,30 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
     return {"rows": rows, "overview": overview}
 
 
+def no_data(target: dict, clickstream: dict[str, int] | None = None) -> dict:
+    """A list row's figures when the Search Console store is empty: everything missing, never 0 (ADR 0002)."""
+    return {"labels": labels(target), "volume": target.get("volume"),
+            "clickstream_volume": (clickstream or {}).get(target["primary_keyword"].strip().lower()),
+            "clicks": None, "impressions": None,
+            "top_url": None, "top_url_off_target": None, "current": None, "start": None, "movement": None,
+            "direction": None, "period_avg": None, "no_data": True, "series": []}
+
+
+def _cards(row: dict, target: dict) -> dict:
+    cards = {k: row[k] for k in ("current", "start", "movement", "direction", "period_avg", "clicks", "impressions", "no_data")}
+    cards["ads_volume"] = target.get("volume")
+    cards["clickstream_volume"] = row["clickstream_volume"]
+    return cards
+
+
+def detail_no_data(target: dict, clickstream: dict[str, int] | None = None) -> dict:
+    """detail() for an empty Search Console store."""
+    row = no_data(target, clickstream)
+    return {"id": target["id"], "keyword": target["primary_keyword"], "path": target["path"], "labels": row["labels"],
+            "tags": list(target.get("tags") or []), "cards": _cards(row, target), "series": [], "variants": [],
+            "top_url": None, "top_url_off_target": None}
+
+
 def detail(daily: list[dict], target: dict, start: dt.date, end: dt.date, grouping: str,
            clickstream: dict[str, int] | None = None) -> dict:
     """One target over the range (#28): cards, series at the grouping and a table of its close-variant queries,
@@ -189,9 +213,6 @@ def detail(daily: list[dict], target: dict, start: dt.date, end: dt.date, groupi
     variants = sorted(({"query": q, "impressions": sum(r["impressions"] for r in rs), "clicks": sum(r["clicks"] for r in rs),
                         "position": _r(_wavg(rs))} for q, rs in per.items()),
                       key=lambda v: (-v["impressions"], v["query"]))
-    cards = {k: row[k] for k in ("current", "start", "movement", "direction", "period_avg", "clicks", "impressions", "no_data")}
-    cards["ads_volume"] = target.get("volume")
-    cards["clickstream_volume"] = row["clickstream_volume"]
     return {"id": target["id"], "keyword": target["primary_keyword"], "path": target["path"], "labels": row["labels"],
-            "tags": list(target.get("tags") or []), "cards": cards, "series": row["series"], "variants": variants,
+            "tags": list(target.get("tags") or []), "cards": _cards(row, target), "series": row["series"], "variants": variants,
             "top_url": row["top_url"], "top_url_off_target": row["top_url_off_target"]}

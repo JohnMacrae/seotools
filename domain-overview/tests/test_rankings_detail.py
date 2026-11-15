@@ -81,3 +81,21 @@ def test_deleting_a_target_drops_its_tags(c):
     c.post(f"/api/targets/{t}/tags", json={"tag": "PAA"})
     assert c.delete(f"/api/targets/{t}").status_code == 200
     assert c.get("/api/tags").json()["tags"] == []
+
+
+def test_detail_names_search_console_source_and_date(c):
+    d = c.get(f"/api/rankings/{tid(c, 'lace wedding dresses')}", params={"range": "all"}).json()
+    last = c.get("/api/rankings", params={"range": "all"}).json()["last_day"]
+    assert d["gsc"] == {"source": "Search Console", "as_of": last}
+
+
+def test_empty_store_shows_clicks_and_impressions_as_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB_PATH", tmp_path / "overview.db")
+    with TestClient(main.app) as c:
+        c.post("/api/targets", json=next(iter(TARGETS.values())))
+        t = c.get("/api/targets").json()[0]["id"]
+        d = c.get(f"/api/rankings/{t}").json()
+        assert d["cards"]["clicks"] is None and d["cards"]["impressions"] is None
+        assert d["gsc"] == {"source": "Search Console", "as_of": None}
+        row = c.get("/api/rankings").json()["rows"][0]
+        assert row["clicks"] is None and row["impressions"] is None
