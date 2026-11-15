@@ -102,6 +102,8 @@ $("fetchcs").onclick = async () => {
 };
 const pos = n => n == null ? "–" : n.toFixed(1);
 const kindOf = label => label.split(":")[0];
+// Shown without the kind; the folder label stays a filter but is left out of the table, which already shows the path.
+const labelValue = label => label.slice(kindOf(label).length + 1);
 
 function query() {
   const p = new URLSearchParams({range: state.range, movement: state.movement});
@@ -164,7 +166,7 @@ function draw() {
 }
 function drawLabelFilter(kinds) {
   $("lblwrap").innerHTML = Object.entries(kinds).map(([k, vs]) => `<span class="kind">${esc(k)}:` +
-    vs.map(v => `<label><input type="checkbox" value="${esc(v)}"${state.labels.has(v) ? " checked" : ""}> ${esc(v.slice(k.length + 1))}</label>`).join("") + `</span>`).join("");
+    vs.map(v => `<label><input type="checkbox" value="${esc(v)}"${state.labels.has(v) ? " checked" : ""}> ${esc(labelValue(v))}</label>`).join("") + `</span>`).join("");
   $("lblwrap").querySelectorAll("input").forEach(c => c.onchange = () => {
     c.checked ? state.labels.add(c.value) : state.labels.delete(c.value); load();
   });
@@ -208,10 +210,13 @@ function drawChart(d) {
 function drawTable(d, kinds) {
   const rows = sorted(d.rows);
   if (!rows.length) { $("tbl").innerHTML = `<div class="sub">No keyword targets match.</div>`; return; }
-  $("tbl").innerHTML = `<table><thead><tr><th>Keyword</th><th>Labels</th><th class="n">Position now</th><th class="n">Movement</th>
+  const chips = r => r.labels.filter(l => kindOf(l) in kinds && kindOf(l) !== "folder")
+    .map(l => `<span class="lbl" title="${esc(l)}">${esc(labelValue(l))}</span>`).join("");
+  const showLabels = rows.some(r => chips(r));  // no column when every row's would be empty
+  $("tbl").innerHTML = `<table><thead><tr><th>Keyword</th>${showLabels ? "<th>Labels</th>" : ""}<th class="n">Position now</th><th class="n">Movement</th>
     <th class="n">Period avg</th><th class="n" title="${esc(state.volumeSource)}">Ads volume</th><th class="n" title="${esc(csLabel())}">Clickstream<div class="sub">${esc(csDate())}</div></th><th class="n">Clicks</th><th>Top URL</th></tr></thead><tbody>` +
     rows.map(r => `<tr class="rowlink" data-id="${r.id}" style="cursor:pointer"><td>${esc(r.keyword)}<div class="sub">${esc(r.path)}</div></td>
-      <td>${r.labels.filter(l => kindOf(l) in kinds).map(l => `<span class="lbl">${esc(l)}</span>`).join("")}</td>
+      ${showLabels ? `<td>${chips(r)}</td>` : ""}
       <td class="n">${r.no_data ? '<span class="sub">no data</span>' : pos(r.current)}</td><td class="n">${arrow(r)}</td>
       <td class="n">${pos(r.period_avg)}</td><td class="n">${num(r.volume)}</td>
       <td class="n">${num(r.clickstream_volume)}</td>
