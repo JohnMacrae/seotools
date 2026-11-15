@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app import main  # noqa: E402
 
-ROUTES = ["/", "/compare", "/linking", "/targets", "/mappack"]
+ROUTES = ["/", "/compare", "/linking", "/targets", "/mappack", "/rankings"]
 SCRIPT_RE = re.compile(r"<script(?P<attrs>[^>]*)>(?P<body>.*?)</script>", re.S | re.I)
 
 

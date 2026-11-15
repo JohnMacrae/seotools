@@ -465,6 +465,11 @@ def linking_page():
     return FileResponse(STATIC / "linking.html")
 
 
+@app.get("/rankings")
+def rankings_page():
+    return FileResponse(STATIC / "rankings.html")
+
+
 @app.get("/digest")
 def digest_page():
     return FileResponse(STATIC / "digest.html")

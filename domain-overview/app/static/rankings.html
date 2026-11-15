@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rankings</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root { --accent-bg: #fff3a8; --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
+    color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --accent-bg: #1f2c45;  } }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; overflow-x: auto; }
+  input, button { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--card); color: var(--ink); }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  code { background: var(--subtle); padding: 0 4px; border-radius: 4px; }
+  h2 { font-size: 15px; margin: 0 0 6px; }
+
+  .chart { position: relative; height: 280px; }
+  .kind { white-space: nowrap; } .kind label { margin-left: 6px; }
+  .up { color: #2e8b57; font-weight: 600; } .down { color: var(--bad); font-weight: 600; } .flat { color: var(--muted); }
+  th.sort { cursor: pointer; } th.sort.on { color: var(--ink); }
+  td.n, th.n { text-align: right; }
+  .lbl { display: inline-block; font-size: 11px; padding: 0 6px; margin: 0 4px 2px 0; border-radius: 8px; background: var(--subtle); color: var(--muted); }
+  .off { color: var(--bad); }
+  select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="rankings" class="on">Rankings</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a></nav></div>
+</header>
+<main>
+  <div id="err"></div>
+  <div class="bar">
+    <label>Range <select id="range"></select></label>
+    <label id="grpwrap">Interval <select id="grouping"></select></label>
+    <label>Show <select id="mv"><option value="all">All movement</option><option value="up">Moved up</option><option value="down">Moved down</option></select></label>
+    <label>Sort <select id="sort">
+      <option value="moved">Most moved</option><option value="top">Top ranks</option>
+      <option value="volume">Ads volume</option><option value="clicks">Clicks</option></select></label>
+  </div>
+  <div class="bar" id="lblwrap"></div>
+  <div class="sub" id="note" style="margin-bottom:10px"></div>
+  <div class="card"><h2 style="margin:0 0 6px;font-size:15px">Average position of the targets <span class="sub">(lower is better; gaps = no data)</span></h2>
+    <div class="chart"><canvas id="ov"></canvas></div></div>
+  <div class="card"><div id="tbl"></div></div>
+</main>
+<script src="spendlight.js"></script>
+<script src="sitemenu.js"></script>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+const PRESETS = {all:"All data","12m":"12 months","6m":"6 months","3m":"3 months","30d":"30 days","12w":"12 weeks","7d":"7 days"};
+const state = {range: "3m", grouping: null, movement: "all", sort: "moved", labels: new Set(), data: null, volumeSource: "Google Ads UK monthly, keyword targets doc"};
+let chart = null;
+const pos = n => n == null ? "–" : n.toFixed(1);
+const kindOf = label => label.split(":")[0];
+
+function query() {
+  const p = new URLSearchParams({range: state.range, movement: state.movement});
+  if (state.grouping) p.set("grouping", state.grouping);
+  state.labels.forEach(l => p.append("labels", l));
+  return p;
+}
+function showError(msg) { $("err").innerHTML = `<div class="err">${esc(msg)}</div>`; }
+async function loadVolumeSource() {
+  // ADR 0002: the Ads volume figure is labelled with its source and date (the targets doc's as-of).
+  try {
+    const m = await (await fetch("api/targets/meta")).json();
+    if (m.doc_mtime) state.volumeSource = `Google Ads UK monthly, keyword targets doc as of ${m.doc_mtime.slice(0, 10)}`;
+  } catch {}
+}
+async function load() {
+  $("err").innerHTML = "";
+  try {
+    const r = await fetch("api/rankings?" + query());
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { showError(j.detail || `Rankings failed (${r.status})`); return; }
+    state.data = j; state.grouping = j.grouping; draw();
+  } catch (e) { showError(`Rankings failed to load: ${e.message}`); }
+}
+function arrow(row) {
+  if (row.direction == null) return `<span class="flat">–</span>`;
+  if (row.direction === "flat") return `<span class="flat">→ 0.0</span>`;
+  // movement = start - current: positive means the position number fell, which is better.
+  const up = row.direction === "up";
+  return `<span class="${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(row.movement).toFixed(1)}</span>`;
+}
+const SORT_KEYS = {  // larger sorts first; rows without a value go last
+  moved: r => r.movement == null ? -Infinity : Math.abs(r.movement),
+  top: r => r.current == null ? -Infinity : -r.current,
+  volume: r => r.volume ?? -Infinity,
+  clicks: r => r.clicks};
+function sorted(rows) {
+  const key = SORT_KEYS[state.sort];
+  return rows.slice().sort((a, b) => (key(b) > key(a)) - (key(b) < key(a)) || a.keyword.localeCompare(b.keyword));
+}
+function shownKinds(d) {
+  // Product line and phase are hidden while every target has the same value (the site doesn't use them).
+  const values = {};
+  d.labels.forEach(l => (values[kindOf(l)] = values[kindOf(l)] || []).push(l));
+  return Object.fromEntries(Object.entries(values).filter(([k, vs]) => !((k === "line" || k === "phase") && vs.length < 2)));
+}
+function draw() {
+  const d = state.data, kinds = shownKinds(d);
+  $("range").innerHTML = Object.entries(PRESETS).map(([k, v]) => `<option value="${k}"${k === state.range ? " selected" : ""}>${v}</option>`).join("");
+  $("grpwrap").hidden = !d.groupings.length;
+  $("grouping").innerHTML = d.groupings.map(g => `<option${g === d.grouping ? " selected" : ""}>${g}</option>`).join("");
+  $("mv").value = state.movement; $("sort").value = state.sort;
+  drawLabelFilter(kinds);
+  $("note").textContent = (d.range
+    ? `Search Console data from ${d.range.start} to ${d.range.end}` + (d.range.clamped ? ` (data from ${d.first_day}, so the range is shorter than requested)` : "") + ". Positions are impression-weighted."
+    : "No Search Console data stored yet.") + ` Ads volume: ${state.volumeSource}.`;
+  drawChart(d); drawTable(d, kinds);
+}
+function drawLabelFilter(kinds) {
+  $("lblwrap").innerHTML = Object.entries(kinds).map(([k, vs]) => `<span class="kind">${esc(k)}:` +
+    vs.map(v => `<label><input type="checkbox" value="${esc(v)}"${state.labels.has(v) ? " checked" : ""}> ${esc(v.slice(k.length + 1))}</label>`).join("") + `</span>`).join("");
+  $("lblwrap").querySelectorAll("input").forEach(c => c.onchange = () => {
+    c.checked ? state.labels.add(c.value) : state.labels.delete(c.value); load();
+  });
+}
+function drawChart(d) {
+  if (chart) chart.destroy();
+  chart = null;
+  if (typeof Chart === "undefined") { showError("Chart library failed to load; the table below is still current."); return; }
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  chart = new Chart($("ov"), {type: "line",
+    data: {labels: d.overview.map(p => p.start), datasets: [{label: "Average position", data: d.overview.map(p => p.position),
+      borderColor: accent, backgroundColor: accent, spanGaps: false, tension: 0.2, pointRadius: 2}]},
+    options: {maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {reverse: true, title: {display: true, text: "Position"}}}}});
+}
+function drawTable(d, kinds) {
+  const rows = sorted(d.rows);
+  if (!rows.length) { $("tbl").innerHTML = `<div class="sub">No keyword targets match.</div>`; return; }
+  $("tbl").innerHTML = `<table><thead><tr><th>Keyword</th><th>Labels</th><th class="n">Position now</th><th class="n">Movement</th>
+    <th class="n">Period avg</th><th class="n" title="${esc(state.volumeSource)}">Ads volume</th><th class="n">Clicks</th><th>Top URL</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td>${esc(r.keyword)}<div class="sub">${esc(r.path)}</div></td>
+      <td>${r.labels.filter(l => kindOf(l) in kinds).map(l => `<span class="lbl">${esc(l)}</span>`).join("")}</td>
+      <td class="n">${r.no_data ? '<span class="sub">no data</span>' : pos(r.current)}</td><td class="n">${arrow(r)}</td>
+      <td class="n">${pos(r.period_avg)}</td><td class="n">${r.volume == null ? "–" : r.volume.toLocaleString()}</td>
+      <td class="n">${r.clicks.toLocaleString()}</td>
+      <td>${r.top_url ? esc(r.top_url) + (r.top_url_off_target ? ' <span class="off" title="Google ranks a different page than the target">off target</span>' : "") : "–"}</td></tr>`).join("") + "</tbody></table>";
+}
+$("range").onchange = e => { state.range = e.target.value; state.grouping = null; load(); };
+$("grouping").onchange = e => { state.grouping = e.target.value; load(); };
+$("mv").onchange = e => { state.movement = e.target.value; load(); };
+$("sort").onchange = e => { state.sort = e.target.value; drawTable(state.data, shownKinds(state.data)); };
+loadVolumeSource().then(load);
+</script>
+</body>
+</html>
