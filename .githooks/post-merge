@@ -1,0 +1,12 @@
+#!/bin/sh
+# Run the test suite after a merge: clean merge commits skip pre-commit, so merged branches would go untested.
+# A failure warns; it can't undo the merge. Skip with SKIP_POST_MERGE_TESTS=1 (quick merges, scripted pulls).
+[ "$SKIP_POST_MERGE_TESTS" = "1" ] && { echo "post-merge: tests skipped (SKIP_POST_MERGE_TESTS=1)"; exit 0; }
+cd "$(git rev-parse --show-toplevel)/domain-overview" || exit 0
+echo "post-merge: running the test suite (SKIP_POST_MERGE_TESTS=1 to skip)..."
+if docker compose run --build --rm tests; then
+  echo "post-merge: tests passed"
+else
+  echo "post-merge: TESTS FAILED after this merge; fix before pushing" >&2
+fi
+exit 0

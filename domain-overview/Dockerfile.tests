@@ -1,3 +1,6 @@
 FROM python:3.12-slim
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends nodejs git \
     && rm -rf /var/lib/apt/lists/*
+# Test dependencies live in the image (cached layer), so a run doesn't pip install every time.
+COPY requirements.txt requirements-dev.txt /tmp/
+RUN pip install -q --no-cache-dir --root-user-action=ignore -r /tmp/requirements-dev.txt
