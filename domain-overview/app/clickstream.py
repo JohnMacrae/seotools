@@ -69,6 +69,14 @@ def load(con) -> tuple[dict[str, int], dict]:
     return volumes(con), label(con)
 
 
+def _flatten(result) -> list[dict]:
+    """Keyword items from a DataForSEO result list. The live API nests them under result[].items; the mock is flat."""
+    out = []
+    for r in result or []:
+        out += r["items"] if isinstance(r.get("items"), list) else [r]
+    return out
+
+
 async def fetch(con, keywords, now=None) -> dict:
     """Fetch keywords missing or older than TTL_DAYS. No DFS call and no run row when nothing is needed."""
     from . import dfs
@@ -83,7 +91,7 @@ async def fetch(con, keywords, now=None) -> dict:
             items, cost = await dfs.post_path(c, DFS_PATH, {"keywords": chunk, "location_code": DFS_LOCATION},
                                               mock_name="clickstream_volume", all_results=True)
             total += cost
-            got = {norm_keyword(it.get("keyword") or ""): it.get("search_volume") for it in (items or [])}
+            got = {norm_keyword(it.get("keyword") or ""): it.get("search_volume") for it in _flatten(items)}
             rows += [(k, got[k]) for k in chunk if k in got]  # unanswered keywords stay uncached
     run_id = con.execute("INSERT INTO clickstream_runs(fetched_at, keywords, cost) VALUES (?,?,?)",
                          (stamp, len(todo), total)).lastrowid

@@ -126,3 +126,14 @@ def test_template_keywords_are_never_sent_to_dataforseo():
     """'{designer} wedding dresses' made DataForSEO reject the whole batch (#33)."""
     sent = clickstream._norm(["{designer} wedding dresses", "wedding dresses", "a [b] c", "bridal | gowns", "Lace Dress"])
     assert sent == ["wedding dresses", "lace dress"]
+
+
+def test_live_response_shape_nests_items_under_result(c, monkeypatch):
+    """The live API returns result[0].items[...], not a flat list; the first live fetch cached nothing because of it (#33)."""
+    async def nested(client, path, task, mock_name=None, all_results=False):
+        return [{"se_type": "google", "items_count": len(task["keywords"]),
+                 "items": [{"keyword": k, "search_volume": 321} for k in task["keywords"]]}], 0.0132
+
+    monkeypatch.setattr(dfs, "post_path", nested)
+    assert c.post("/api/clickstream").status_code == 200
+    assert c.get("/api/clickstream/estimate").json()["keywords"] == 0
