@@ -42,10 +42,10 @@ The **Health** tab shows orphans, contextual orphans (linked only from nav/foote
 dead ends, non-indexable pages, title/H1/description problems, click depth and pages by section. Results are linkable with `?crawl=ID`.
 Other tabs (strength, topic map, template rules, to-dos) are placeholders for later work.
 
-Tests (no host Python needed; installs `requirements-dev.txt` in a throwaway python:3.12 container and runs all of `tests/`):
+Tests (no host Python needed; installs `requirements-dev.txt` in a throwaway python:3.12 container and runs all of `tests/`; `--build` rebuilds the image when `Dockerfile.tests` changes, cached otherwise):
 
 ```
-cd domain-overview && docker compose run --rm tests
+cd domain-overview && docker compose run --build --rm tests
 ```
 
 Once per clone, enable the pre-commit hook that runs these tests: `git config core.hooksPath .githooks`
