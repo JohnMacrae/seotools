@@ -20,7 +20,7 @@ DEFAULT_PRESET = "3m"
 GROUPINGS = ("day", "week", "month")
 MOVEMENTS = ("all", "up", "down")
 WINDOW = 7  # data days for current and period-start positions
-LABEL_KINDS = ("line", "phase", "topic", "folder")
+LABEL_KINDS = ("line", "phase", "topic", "folder", "tag")
 
 
 # ---------------------------------------------------------------- range and grouping
@@ -104,6 +104,7 @@ def labels(target: dict) -> list[str]:
     if (target.get("topic") or "").strip():
         out.append(f"topic:{target['topic'].strip()}")
     out.append(f"folder:{folder(target['path'])}")
+    out += [f"tag:{t}" for t in target.get("tags") or []]
     return out
 
 
@@ -171,3 +172,22 @@ def report(daily: list[dict], targets: list[dict], start: dt.date, end: dt.date,
     for r in rows:
         del r["_raw"]
     return {"rows": rows, "overview": overview}
+
+
+def detail(daily: list[dict], target: dict, start: dt.date, end: dt.date, grouping: str) -> dict:
+    """One target over the range (#28): cards, series at the grouping and a table of its close-variant queries,
+    each with its own impressions, clicks and impression-weighted position (queries differing only in case merge)."""
+    row = report(daily, [target], start, end, grouping)["rows"][0]
+    s, e = start.isoformat(), end.isoformat()
+    vr = _variant_rows([r for r in daily if s <= r["date"] <= e], target)
+    per: dict[str, list] = {}
+    for r in vr:
+        per.setdefault(r["query"].strip().lower(), []).append(r)
+    variants = sorted(({"query": q, "impressions": sum(r["impressions"] for r in rs), "clicks": sum(r["clicks"] for r in rs),
+                        "position": _r(_wavg(rs))} for q, rs in per.items()),
+                      key=lambda v: (-v["impressions"], v["query"]))
+    cards = {k: row[k] for k in ("current", "start", "movement", "direction", "period_avg", "clicks", "impressions", "no_data")}
+    cards["ads_volume"] = target.get("volume")
+    return {"id": target["id"], "keyword": target["primary_keyword"], "path": target["path"], "labels": row["labels"],
+            "tags": list(target.get("tags") or []), "cards": cards, "series": row["series"], "variants": variants,
+            "top_url": row["top_url"], "top_url_off_target": row["top_url_off_target"]}

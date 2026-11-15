@@ -35,3 +35,4 @@ def test_page_scripts_parse(route, tmp_path):
 def test_rankings_page_wired_to_api_and_chartjs():
     html = TestClient(main.app).get("/rankings").text
     assert "chart.umd" in html and "api/rankings" in html and "spanGaps" in html
+    assert "api/rankings/${id}" in html and "api/targets/${d.id}/tags" in html

@@ -1113,7 +1113,7 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
             rng = rankings.resolve_range(range, first, last)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        tgts = targets.list_all(con)
+        tgts = targets.with_tags(con, targets.list_all(con))
         all_labels = sorted({lb for t in tgts for lb in rankings.labels(t)})
         tgts = [t for t in tgts if rankings.label_match(rankings.labels(t), labels)]
         if rng is None:
@@ -1136,6 +1136,63 @@ def api_rankings(range: str = rankings.DEFAULT_PRESET, grouping: str | None = No
     rows = rep["rows"] if movement == "all" else [r for r in rep["rows"] if r["direction"] == movement]
     return {"first_day": st["first_day"], "last_day": st["last_day"], "range": rng, "groupings": offered,
             "grouping": grouping, "labels": all_labels, "overview": rep["overview"], "rows": rows}
+
+
+@app.get("/api/rankings/{tid}")
+def api_rankings_detail(tid: int, range: str = rankings.DEFAULT_PRESET, grouping: str | None = None):
+    """Detail for one keyword target: cards, series at the grouping, close-variant table, tags."""
+    with closing(db()) as con:
+        t = targets.get(con, tid)
+        if t is None:
+            raise HTTPException(404, "No such target")
+        t["tags"] = targets.tags_of(con, tid)
+        st = gsc.store_status(con)
+        first = dt.date.fromisoformat(st["first_day"]) if st["first_day"] else None
+        last = dt.date.fromisoformat(st["last_day"]) if st["last_day"] else None
+        try:
+            rng = rankings.resolve_range(range, first, last)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if rng is None:
+            return {"id": tid, "keyword": t["primary_keyword"], "path": t["path"], "labels": rankings.labels(t),
+                    "tags": t["tags"], "range": None, "groupings": [], "grouping": None, "series": [], "variants": [],
+                    "cards": {"current": None, "start": None, "movement": None, "direction": None, "period_avg": None,
+                              "clicks": 0, "impressions": 0, "no_data": True, "ads_volume": t.get("volume")}}
+        a, b = dt.date.fromisoformat(rng["start"]), dt.date.fromisoformat(rng["end"])
+        offered = rankings.groupings(a, b)
+        if grouping is None:
+            grouping = rankings.default_grouping(a, b)
+        elif grouping not in offered:
+            raise HTTPException(400, f"grouping {grouping!r} not offered for this range (offered: {', '.join(offered) or 'none'})")
+        daily = [dict(r) for r in con.execute(
+            "SELECT date,query,page,clicks,impressions,position FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
+            (rng["start"], rng["end"]))]
+    return {**rankings.detail(daily, t, a, b, grouping or "day"), "range": rng, "groupings": offered, "grouping": grouping}
+
+
+@app.get("/api/tags")
+def api_tags():
+    with closing(db()) as con:
+        return {"tags": targets.all_tags(con)}
+
+
+@app.post("/api/targets/{tid}/tags")
+def api_tag_add(tid: int, body: dict):
+    with closing(db()) as con:
+        if targets.get(con, tid) is None:
+            raise HTTPException(404, "No such target")
+        try:
+            return {"tags": targets.add_tag(con, tid, str(body.get("tag") or ""))}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.delete("/api/targets/{tid}/tags/{tag}")
+def api_tag_remove(tid: int, tag: str):
+    with closing(db()) as con:
+        if not targets.remove_tag(con, tid, tag):
+            raise HTTPException(404, "No such tag on this target")
+        return {"tags": targets.tags_of(con, tid)}
 
 
 @app.get("/api/spend-status")
