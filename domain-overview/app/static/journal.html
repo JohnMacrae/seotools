@@ -46,7 +46,7 @@
       <label>Live date <input type="date" name="live_date" required></label>
       <label>&nbsp;<span><input type="checkbox" name="approx"> approx</span></label>
       <label>Page or pattern <input name="page" placeholder="/dresses/*" size="26" required></label>
-      <label>Change type <input name="change_type" placeholder="title, content, backlink, gbp" size="18" required></label>
+      <label>Change type <select name="change_type" id="ctype" required></select></label>
       <label>Note <input name="note" size="34"></label>
       <label>Ref <input name="ref" placeholder="optional" size="12"></label>
       <button type="submit">Add</button>
@@ -60,7 +60,8 @@
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const $ = id => document.getElementById(id);
-let entries = [], editing = null;
+let entries = [], types = [], editing = null;
+const typeOpts = cur => types.map(t => `<option${t === cur ? " selected" : ""}>${esc(t)}</option>`).join("");
 
 async function call(method, url, body) {
   $("err").innerHTML = "";
@@ -71,22 +72,21 @@ async function call(method, url, body) {
 }
 async function load() {
   const j = await call("GET", "api/journal");
-  if (j) { entries = j.entries; draw(); }
+  if (j) { entries = j.entries; types = j.change_types; $("ctype").innerHTML = typeOpts(); draw(); }
 }
 function row(e) {
   if (editing === e.id) {
     return `<tr data-id="${e.id}"><td><input type="date" data-f="live_date" value="${esc(e.live_date)}"></td>
       <td><input type="checkbox" data-f="approx" ${e.approx ? "checked" : ""}></td>
-      <td><input data-f="page" value="${esc(e.page)}"></td><td><input data-f="change_type" value="${esc(e.change_type)}"></td>
+      <td><input data-f="page" value="${esc(e.page)}"></td><td><select data-f="change_type">${typeOpts(e.change_type)}</select></td>
       <td><input data-f="note" value="${esc(e.note)}"></td><td><span class="badge">manual</span></td>
-      <td><input data-f="ref" value="${esc(e.ref)}"></td>
+      <td><input data-f="ref" value="${e.auto_ref ? "" : esc(e.ref)}" placeholder="optional"></td>
       <td class="btns"><button data-act="save">Save</button> <button class="ghost" data-act="cancel">Cancel</button></td></tr>`;
   }
-  const manual = e.source === "manual";
   return `<tr data-id="${e.id}"><td>${esc(e.live_date)}</td><td>${e.approx ? "approx" : ""}</td><td><code>${esc(e.page)}</code></td>
     <td>${esc(e.change_type)}</td><td>${esc(e.note)}</td><td><span class="badge">${esc(e.source)}</span></td>
-    <td class="sub">${manual && e.ref.startsWith("manual-") ? "" : esc(e.ref)}</td>
-    <td class="btns">${manual ? `<button class="ghost" data-act="edit">Edit</button> <button class="del" data-act="del">Delete</button>` : ""}</td></tr>`;
+    <td class="sub">${e.auto_ref ? "" : esc(e.ref)}</td>
+    <td class="btns">${e.editable ? `<button class="ghost" data-act="edit">Edit</button> <button class="del" data-act="del">Delete</button>` : ""}</td></tr>`;
 }
 function draw() {
   $("tbl").innerHTML = entries.length
