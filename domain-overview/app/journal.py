@@ -15,6 +15,11 @@ CHANGE_TYPES = ("new page", "copy", "headings", "title/meta", "internal links", 
 AUTO_REF = "manual-"  # prefix of the ref generated for a manual entry added without one
 
 
+def canonical_type(kind: str) -> str | None:
+    """The listed spelling of a change type, matched ignoring case; None when it isn't on the list."""
+    return next((t for t in CHANGE_TYPES if t.lower() == kind.strip().lower()), None)
+
+
 class DuplicateEntry(Exception):
     """An entry with the same source, ref and page already exists."""
 
@@ -33,7 +38,7 @@ def ensure_table(con: sqlite3.Connection) -> None:
     con.execute("CREATE INDEX IF NOT EXISTS ix_journal_date ON journal(live_date)")
 
 
-def _path(page: str) -> str:
+def path_key(page: str) -> str:
     """Path form used for matching: no scheme/host/query, lower case, no trailing slash (root is '/')."""
     page = page.strip()
     if "://" in page:
@@ -48,9 +53,9 @@ def matches(pattern: str, page: str) -> bool:
     """Does a journal entry's page or URL pattern cover a target page? `*` matches any run of characters."""
     if not pattern.strip() or not page.strip():
         return False
-    pat = _path(pattern)
+    pat = path_key(pattern)
     regex = "".join(".*" if ch == "*" else re.escape(ch) for ch in pat)
-    return re.fullmatch(regex, _path(page)) is not None
+    return re.fullmatch(regex, path_key(page)) is not None
 
 
 def _clean(body: dict, partial: bool) -> dict:
