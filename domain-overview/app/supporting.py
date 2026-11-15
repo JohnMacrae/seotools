@@ -11,7 +11,7 @@ import re
 import httpx
 
 from . import linkgraph, linkmap, linkplan as lp, llm
-from .match import _stem_key
+from .match import stem_key
 
 SHORTLIST_MAX = 10
 BLURB_CHARS = 200
@@ -108,7 +108,7 @@ def validate_edit(anchor: str, sentence: str | None, in_text: bool) -> str | Non
         return "anchor must not be empty"
     if len(anchor) > ANCHOR_MAX_CHARS:
         return f"anchor must be at most {ANCHOR_MAX_CHARS} characters"
-    if not sentence or not lp._find(sentence, anchor):
+    if not sentence or not lp.find_phrase(sentence, anchor):
         return "anchor must occur in the sentence"
     return None
 
@@ -203,8 +203,8 @@ If there is no natural place, return {{"skip": true, "why": "<reason>"}}."""
 
 def is_variant(anchor: str, keywords: list[str]) -> bool:
     """Anchor is a keyword or a close variant (case, plural/singular, word order)."""
-    k = _stem_key(anchor)
-    return bool(k) and any(k == _stem_key(kw) for kw in keywords)
+    k = stem_key(anchor)
+    return bool(k) and any(k == stem_key(kw) for kw in keywords)
 
 
 def place(data: dict | None, text: str, keywords: list[str]) -> tuple[dict | None, str | None]:
@@ -217,16 +217,16 @@ def place(data: dict | None, text: str, keywords: list[str]) -> tuple[dict | Non
         return None, "no usable anchor"
     if not is_variant(anchor, keywords):
         return None, f"anchor '{anchor}' is not a target keyword or close variant"
-    span = lp._find(text, anchor)
+    span = lp.find_phrase(text, anchor)
     if data.get("in_text") and span:
         # prefer the model's sentence when it really is in the text; else the page's own surrounding sentence
         flat = " ".join(text.split())
         sent = " ".join(sentence.split())
-        if not (sent and sent in flat and lp._find(sent, anchor)):
-            sent = lp._context(text, span)
+        if not (sent and sent in flat and lp.find_phrase(sent, anchor)):
+            sent = lp.phrase_context(text, span)
         return {"anchor": text[span[0]:span[1]], "in_text": True, "sentence": sent}, None
     # not in the text (or model said so): needs a drafted sentence containing the anchor
-    if sentence and lp._find(sentence, anchor) and len(sentence.split()) <= DRAFT_MAX_WORDS:
+    if sentence and lp.find_phrase(sentence, anchor) and len(sentence.split()) <= DRAFT_MAX_WORDS:
         return {"anchor": anchor, "in_text": False, "sentence": sentence}, None
     return None, f"anchor '{anchor}' not in page text and no valid drafted sentence"
 

@@ -14,19 +14,19 @@ def _stem(w: str) -> str:
     return w[:-1] if w.endswith("s") and not w.endswith("ss") else w
 
 
-def _stem_key(s: str) -> tuple:
+def stem_key(s: str) -> tuple:
     return tuple(sorted(_stem(w) for w in re.findall(_WORDS, s.lower())))
 
 
 def same_variant(a: str, b: str) -> bool:
     """a and b are close variants of one search (case, plural/singular, word order)."""
-    k = _stem_key(a)
-    return bool(k) and k == _stem_key(b)
+    k = stem_key(a)
+    return bool(k) and k == stem_key(b)
 
 
 def contains_variant(text: str, kw: str) -> bool:
     """Some contiguous run of words in text is kw or a close variant (plural/singular, word order)."""
-    k = _stem_key(kw)
+    k = stem_key(kw)
     n = len(k)
     if not n:
         return False
@@ -37,7 +37,7 @@ def contains_variant(text: str, kw: str) -> bool:
 def contains_loose(text: str, kw: str, gap: int = 2) -> bool:
     """All of kw's words (close variants) within a run of len(kw)+gap words, e.g.
     "Wedding dress & bridal shop in Colchester" holds "wedding dress shop colchester"."""
-    k = Counter(_stem_key(kw))
+    k = Counter(stem_key(kw))
     n = sum(k.values())
     if not n:
         return False
