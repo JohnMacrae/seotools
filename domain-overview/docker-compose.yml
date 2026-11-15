@@ -27,4 +27,4 @@ services:
       - ../docs:/docs:ro
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
-    command: sh -c "pip install -q --root-user-action=ignore -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider tests"
+    command: python -m pytest -q -p no:cacheprovider -n auto tests

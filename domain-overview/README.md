@@ -42,7 +42,7 @@ The **Health** tab shows orphans, contextual orphans (linked only from nav/foote
 dead ends, non-indexable pages, title/H1/description problems, click depth and pages by section. Results are linkable with `?crawl=ID`.
 Other tabs (strength, topic map, template rules, to-dos) are placeholders for later work.
 
-Tests (no host Python needed; installs `requirements-dev.txt` in a throwaway python:3.12 container and runs all of `tests/`; `--build` rebuilds the image when `Dockerfile.tests` changes, cached otherwise):
+Tests (no host Python needed; runs all of `tests/` in parallel (`pytest -n auto`, about 2 minutes) in a python:3.12 image with `requirements-dev.txt` baked in; `--build` rebuilds it when `Dockerfile.tests` or the requirements change, cached otherwise). The pre-commit hook runs them before every commit, and the post-merge hook after every merge or pull (warns on failure; `SKIP_POST_MERGE_TESTS=1` skips):
 
 ```
 cd domain-overview && docker compose run --build --rm tests
