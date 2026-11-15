@@ -148,7 +148,7 @@ function render(d, hist) {
       <a href="./">All lookups</a>
     </div>
 
-    ${/^(www\.)?serenitybrides\.com$/i.test(d.domain) ? `<div class="err" style="background:var(--accent-bg);border-color:var(--accent-soft);color:var(--ink)">Positions here are DataForSEO Labs estimates. For our own rankings use Search Console (<a href="linking">Internal linking → Strength</a>, <a href="targets">Keyword targets</a>).</div>` : ""}
+    ${/^(www\.)?serenitybrides\.com$/i.test(d.domain) ? `<div class="err" style="background:var(--accent-bg);border-color:var(--accent-soft);color:var(--ink)">Positions here are DataForSEO Labs estimates. For our own rankings use Search Console (<a href="linking">Internal linking → Strength</a>, <a href="rankings">Rankings</a><a href="targets">Keyword targets</a>).</div>` : ""}
     <div class="grid tiles">
       <div class="card"><h2>Organic keywords</h2><div class="big">${fmt(h.keywords)}</div>
         <div class="moves"><span class="up">+${fmt(h.new)} new</span><span class="up">▲ ${fmt(h.up)}</span><span class="down">▼ ${fmt(h.down)}</span><span class="down">${fmt(h.lost)} lost</span></div></div>
