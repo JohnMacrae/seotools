@@ -10,6 +10,8 @@ services:
       - ./data:/data
       - ../docs:/docs:ro
       - /volume1/docker/serenity/sweb-live/data/bl/ga4-service-account.json:/secrets/gsc-key.json:ro
+      # Site repos, read-only, for the journal repo reader (#30); a site's repo_path is the container path
+      - /volume1/docker/serenity/sweb-live:/repos/serenity:ro
 
   # Test runner: `docker compose run --rm tests` (not started by `up`)
   tests:

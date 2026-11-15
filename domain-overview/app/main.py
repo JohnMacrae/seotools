@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, crawl, dfs, digest, gsc, health, journal, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
+from . import compare, crawl, dfs, digest, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -203,18 +203,28 @@ def next_daily_run(now: dt.datetime) -> dt.datetime:
 
 
 def run_daily_job() -> dict:
-    """For every site: Search Console top-up (repo read joins later, #30). One site failing doesn't stop the rest."""
+    """For every site: Search Console top-up, then the journal repo read (#30) when the site has a repo_path.
+    The repo read runs even if the top-up failed. One site failing doesn't stop the rest."""
     out = {}
     for site in sites.load(DB_PATH.parent, DB_PATH):
         token = sites.CURRENT.set(site)
+        errors = []
         try:
             with closing(db()) as con:
-                gsc.sync_store(con)
-            out[site["slug"]] = "ok"
+                try:
+                    gsc.sync_store(con)
+                except Exception as e:  # noqa: BLE001 - logged in the result
+                    errors.append(f"gsc: {e}")
+                if site.get("repo_path"):
+                    try:
+                        journal_repo.sync(con, site["repo_path"])
+                    except Exception as e:  # noqa: BLE001
+                        errors.append(f"repo: {e}")
         except Exception as e:  # noqa: BLE001 - logged in the result, next site still runs
-            out[site["slug"]] = f"error: {e}"[:300]
+            errors.append(str(e))
         finally:
             sites.CURRENT.reset(token)
+        out[site["slug"]] = f"error: {'; '.join(errors)}"[:300] if errors else "ok"
     print(f"daily job {dt.datetime.now(LONDON).isoformat(timespec='seconds')}: {out}", flush=True)
     return out
 
@@ -1068,6 +1078,19 @@ def journal_create(body: dict):
             raise HTTPException(400, str(e))
         except KeyError:
             raise HTTPException(409, "An entry with that ref and page already exists")
+
+
+@app.post("/api/journal/sync")
+def journal_sync():
+    """Read the active site's repo now (the 06:00 job does this daily). Free."""
+    site = sites.CURRENT.get() or _site()
+    if not site.get("repo_path"):
+        raise HTTPException(400, "This site has no repo_path")
+    with closing(db()) as con:
+        try:
+            return journal_repo.sync(con, site["repo_path"])
+        except journal_repo.RepoError as e:
+            raise HTTPException(502, str(e))
 
 
 @app.put("/api/journal/{eid}")
