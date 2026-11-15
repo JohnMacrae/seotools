@@ -89,6 +89,7 @@
 </header>
 <main id="app"></main>
 
+<script src="fetchjson.js"></script>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
 <script>
@@ -127,7 +128,9 @@ const volCell = r => fmt(r.volume) + (r.volume_source === "targets" ? ` <span cl
 const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
 
 async function home() {
-  const rows = await fetch("api/comparisons").then(r => r.json());
+  let rows;
+  try { rows = await getJSON("api/comparisons"); }
+  catch (e) { $("#app").innerHTML = `<div class="err">Past comparisons failed to load: ${esc(e.message)}</div>`; return; }
   $("#app").innerHTML = `<div class="card"><h2>Past comparisons</h2>${rows.length ? `<table><tr><th${tip("Your domain")}>Your domain</th><th${tip("Competitors")}>Competitors</th><th${tip("When")}>When</th><th class="num"${tip("Cost")}>Cost</th></tr>
     ${rows.map(r => `<tr><td><a href="?id=${r.id}&d=${encodeURIComponent(r.domain)}&c=${encodeURIComponent(r.competitors)}&l=${r.location_code}">${esc(r.domain)}</a></td>
       <td>${esc(r.competitors.split(",").join(", "))}</td><td>${r.fetched_at.replace("T", " ")}</td><td class="num">$${(r.cost || 0).toFixed(3)}</td></tr>`).join("")}</table>`
@@ -137,21 +140,18 @@ async function home() {
 async function suggestions() {
   const d = $("#f").you.value.trim(); if (!d) { $("#chips").innerHTML = ""; return; }
   try {
-    const list = await fetch(`api/suggest?domain=${encodeURIComponent(d)}&location=${$("#f").location.value}`).then(r => r.ok ? r.json() : []);
+    const list = await getJSON(`api/suggest?domain=${encodeURIComponent(d)}&location=${$("#f").location.value}`);
     $("#chips").innerHTML = list.length ? "Competitors from your last overview: " + list.map(c => `<span class="chip">${esc(c)}</span>`).join("") : "";
     $("#chips").querySelectorAll(".chip").forEach(ch => ch.onclick = () => {
       const f = $("#f"); const slot = ["c1","c2","c3"].find(n => !f[n].value.trim()); if (slot) f[slot].value = ch.textContent;
     });
-  } catch {}
+  } catch (e) { $("#chips").innerHTML = `<span class="sub">Competitor suggestions failed to load: ${esc(e.message)}</span>`; }
 }
 
 async function run(q) {
   const btn = $("#go"); btn.disabled = true; btn.textContent = "Comparing… (up to a minute)";
   try {
-    const res = await fetch("api/compare?" + q);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || res.statusText);
-    S = data; render();
+    S = await getJSON("api/compare?" + q); render();
     if (window.spendLights) window.spendLights.refresh();
   } catch (e) { $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   finally { btn.disabled = false; btn.textContent = "Compare"; }

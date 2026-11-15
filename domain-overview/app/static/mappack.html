@@ -47,6 +47,7 @@
   <div class="card"><h3 style="margin-top:0">Keywords</h3><div class="bar"><label class="sub"><input type="checkbox" id="only"> pack present only</label></div><table id="res"></table><div class="sub">Live columns are single checks and swing between calls; our reference position is Search Console.</div></div>
   <div class="card"><h3 style="margin-top:0">Run history</h3><table id="hist"></table></div>
 </main>
+<script src="fetchjson.js"></script>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
 <script>
@@ -83,12 +84,7 @@ const TIPS = {
   "hist|Wins": "Keywords won out of keywords with a win condition."
 };
 const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
-async function api(method, url) {
-  const r = await fetch(url, {method});
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.detail || r.statusText);
-  return d;
-}
+const api = (method, url) => sendJSON(method, url);
 const wrap = fn => async (...a) => { try { document.getElementById("err").innerHTML = ""; await fn(...a); } catch (e) { document.getElementById("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
 const money = v => "$" + (v || 0).toFixed(3);
 const avg = v => v == null ? "-" : v.toFixed(1);

@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app import main  # noqa: E402
 
-ROUTES = ["/", "/compare", "/linking", "/targets", "/mappack", "/rankings", "/journal"]
+ROUTES = ["/", "/compare", "/linking", "/targets", "/mappack", "/rankings", "/journal", "/digest"]
 SCRIPT_RE = re.compile(r"<script(?P<attrs>[^>]*)>(?P<body>.*?)</script>", re.S | re.I)
 
 
@@ -75,3 +75,20 @@ def test_no_unused_css(page):
     A class that only comes from API data is declared in a `/* data classes: a b */` comment."""
     unused = _unused_classes(page.read_text())
     assert not unused, f"{page.name} styles unused classes {unused}"
+
+
+@pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
+def test_local_scripts_are_served(page):
+    """Each page's local <script src> answers 200 as JavaScript (static files are routed one by one in main.py)."""
+    client = TestClient(main.app)
+    for src in re.findall(r'<script[^>]*\bsrc="(?!https?:)([^"]+)"', page.read_text()):
+        r = client.get("/" + src.lstrip("./"))
+        assert r.status_code == 200 and "javascript" in r.headers["content-type"], f"{page.name}: {src} -> {r.status_code}"
+
+
+@pytest.mark.parametrize("js", sorted(STATIC.glob("*.js")), ids=lambda p: p.name)
+def test_shared_scripts_parse(js):
+    node = shutil.which("node")
+    assert node, "node is required to syntax-check page scripts (no silent skip)"
+    p = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert p.returncode == 0, f"{js.name}: {p.stderr}"

@@ -76,3 +76,20 @@ def test_page_colours_come_from_css_variables():
             for m in HEX.finditer(ALLOWED_HEX.sub("", line)):
                 found.append(f"{f.name}:{i} {m.group()}")
     assert not found, "use a CSS variable (define it in :root and the dark block):\n" + "\n".join(found)
+
+
+SCRIPT_SRC = re.compile(r'<script[^>]*\bsrc="fetchjson\.js"')
+
+
+def test_pages_call_the_api_through_getjson():
+    """CODING_STANDARDS.md (Pages): every fetch fails visibly. Pages call the API with getJSON / sendJSON from
+    static/fetchjson.js, which throws with the API's `detail` on a non-2xx or network error; never with fetch()."""
+    found = []
+    for f in sorted(STATIC.glob("*.html")):
+        text = f.read_text()
+        for i, line in enumerate(text.splitlines(), 1):
+            if re.search(r"(?<![\w.])fetch\(", line):
+                found.append(f"{f.name}:{i} calls fetch() directly")
+        if re.search(r"\b(getJSON|sendJSON)\(", text) and not SCRIPT_SRC.search(text):
+            found.append(f"{f.name} uses getJSON without <script src=\"fetchjson.js\">")
+    assert not found, "use getJSON / sendJSON (static/fetchjson.js):\n" + "\n".join(found)

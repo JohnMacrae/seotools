@@ -305,6 +305,11 @@ def spendlight_js():
     return FileResponse(STATIC / "spendlight.js", media_type="application/javascript")
 
 
+@app.get("/fetchjson.js")
+def fetchjson_js():
+    return FileResponse(STATIC / "fetchjson.js", media_type="application/javascript")
+
+
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")

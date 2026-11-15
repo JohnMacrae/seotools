@@ -21,7 +21,7 @@ no unused CSS, inline scripts parse).
 
 - Start from a sibling page for the house style (header, nav, `sitemenu.js`, `spendlight.js`, theme tokens),
   then keep only what this page uses.
-- Every `fetch` fails visibly: a network error or non-2xx shows an `.err` box with the API's `detail`.
+- Every API call fails visibly: pages call `getJSON` / `sendJSON` (`static/fetchjson.js`, enforced by `tests/test_code.py`), which throw with the API's `detail`; the caller's `catch` shows it in an `.err` box. A failure never renders as an empty list.
   A CDN library that doesn't load degrades its own part only (the table still draws without Chart.js).
 - Colours come from the CSS variables (`--accent`, `--bad`, ...), so dark mode follows.
 - Every interpolated string goes through `esc()`.

@@ -77,6 +77,7 @@
 </header>
 <main id="app"></main>
 
+<script src="fetchjson.js"></script>
 <script src="spendlight.js"></script>
 <script src="sitemenu.js"></script>
 <script>
@@ -140,9 +141,13 @@ const TIPS = {
   "gap|Why": "Reason given by the planner."
 };
 const tip = k => TIPS[k] ? ` title="${esc(TIPS[k])}"` : "";
+const errBox = msg => `<div class="err">${esc(msg)}</div>`;
+const tabError = (what, e) => $("#tab").insertAdjacentHTML("afterbegin", errBox(`${what}: ${e.message}`));
 
 async function home() {
-  const rows = await fetch("api/crawls?domain=" + encodeURIComponent($("#domain").value)).then(r => r.ok ? r.json() : []);
+  let rows;
+  try { rows = await getJSON("api/crawls?domain=" + encodeURIComponent($("#domain").value)); }
+  catch (e) { $("#app").innerHTML = errBox(`Past crawls failed to load: ${e.message}`); return; }
   $("#app").innerHTML = `<div class="card"><h2>Past crawls</h2>${rows.length ? `<table><tr><th>Domain</th><th>Started</th><th>Status</th><th class="num"${tip("crawls|Pages")}>Pages</th></tr>
     ${rows.map(r => `<tr><td><a href="?crawl=${r.id}">${esc(r.domain)}</a></td><td>${esc(r.started_at.replace("T", " "))}</td>
       <td class="${r.status === "error" ? "bad" : ""}">${esc(r.status)}${r.error ? ` — ${esc(r.error)}` : ""}</td><td class="num">${fmt(r.pages)}</td></tr>`).join("")}</table>`
@@ -151,8 +156,10 @@ async function home() {
 
 async function watch(id) {
   clearInterval(timer);
+  const fail = e => { clearInterval(timer); $("#go").disabled = false; $("#app").innerHTML = errBox(`Crawl failed to load: ${e.message}`); };
   const tick = async () => {
-    const c = await fetch("api/crawl/" + id).then(r => r.json());
+    let c, h;
+    try { c = await getJSON("api/crawl/" + id); } catch (e) { fail(e); return; }
     if (c.status === "running") {
       $("#go").disabled = true;
       $("#app").innerHTML = `<div class="card"><h2>Crawling ${esc(c.domain)}…</h2><div class="big">${fmt(c.pages)}</div><div class="sub">pages fetched so far</div></div>`;
@@ -161,7 +168,7 @@ async function watch(id) {
     clearInterval(timer); $("#go").disabled = false;
     if (c.status === "error") { $("#app").innerHTML = `<div class="err">Crawl failed: ${esc(c.error)}</div>`; return; }
     $("#domain").value = c.domain;
-    const h = await fetch(`api/crawl/${id}/health`).then(r => r.json());
+    try { h = await getJSON(`api/crawl/${id}/health`); } catch (e) { fail(e); return; }
     renderCrawl(c, h);
   };
   await tick();
@@ -188,9 +195,8 @@ async function showTab(t) {
   if (t === "Progress") { await loadProgress(); return; }
   if (!cur.strength) {
     $("#tab").innerHTML = `<div class="sub">Loading Search Console data and link strength…</div>`;
-    const r = await fetch(`api/crawl/${cur.c.id}/strength`);
-    if (!r.ok) { $("#tab").innerHTML = `<div class="err">${esc((await r.json()).detail || r.statusText)}</div>`; return; }
-    cur.strength = await r.json();
+    try { cur.strength = await getJSON(`api/crawl/${cur.c.id}/strength`); }
+    catch (e) { $("#tab").innerHTML = errBox(e.message); return; }
     cur.line = "all"; cur.sort = { key: "opportunity", dir: -1 };
   }
   if (cur.tab === "Strength") $("#tab").innerHTML = strengthTab(cur.strength);
@@ -258,7 +264,9 @@ let planTimer = null;
 const fromUrl = () => new URLSearchParams(location.search).get("plan");
 
 async function loadPlans(pickId) {
-  const plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(r => r.ok ? r.json() : []);
+  let plans;
+  try { plans = await getJSON(`api/crawl/${cur.c.id}/plans`); }
+  catch (e) { $("#tab").innerHTML = errBox(`Link plans failed to load: ${e.message}`); return; }
   cur.plans = plans;
   const want = pickId ?? cur.planId ?? fromUrl();
   const sel = plans.find(p => String(p.id) === String(want)) || plans.find(p => p.status === "done") || plans[0];
@@ -270,10 +278,10 @@ async function loadPlans(pickId) {
 async function pollPlan() {
   clearInterval(planTimer);
   const tick = async () => {
-    const r = await fetch("api/plan/" + cur.planId);
-    if (!r.ok) { clearInterval(planTimer); return; }
-    cur.plan = await r.json();
-    if (cur.plan.status !== "running") { clearInterval(planTimer); if (window.spendLights) window.spendLights.refresh(); cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json()); }
+    try {
+      cur.plan = await getJSON("api/plan/" + cur.planId);
+      if (cur.plan.status !== "running") { clearInterval(planTimer); if (window.spendLights) window.spendLights.refresh(); cur.plans = await getJSON(`api/crawl/${cur.c.id}/plans`); }
+    } catch (e) { clearInterval(planTimer); tabError("Link plan failed to load", e); return "error"; }
     if (PLAN_TABS.includes(cur.tab)) renderPlanTab();
     return cur.plan.status;
   };
@@ -281,11 +289,11 @@ async function pollPlan() {
 }
 
 async function buildPlan() {
-  const r = await fetch(`api/crawl/${cur.c.id}/plan`, { method: "POST" });
-  const d = await r.json();
-  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); return; }
-  cur.planId = d.id; cur.line = "all";
-  cur.plans = await fetch(`api/crawl/${cur.c.id}/plans`).then(x => x.json());
+  try {
+    const d = await sendJSON("POST", `api/crawl/${cur.c.id}/plan`);
+    cur.planId = d.id; cur.line = "all";
+    cur.plans = await getJSON(`api/crawl/${cur.c.id}/plans`);
+  } catch (e) { tabError("Link plan failed to start", e); return; }
   pollPlan();
 }
 
@@ -393,7 +401,9 @@ const GCOLS = [["title", "Title", 0], ["slug", "Slug", 0], ["line", "Line", 0], 
   ["volume", "Monthly volume", 1], ["sources", "Sources", 0], ["why", "Why", 0]];
 
 async function loadGaps(pickId) {
-  const runs = await fetch(`api/crawl/${cur.c.id}/gaps`).then(r => r.ok ? r.json() : []);
+  let runs;
+  try { runs = await getJSON(`api/crawl/${cur.c.id}/gaps`); }
+  catch (e) { $("#tab").innerHTML = errBox(`Pages to build failed to load: ${e.message}`); return; }
   cur.gaps = runs;
   const sel = runs.find(g => String(g.id) === String(pickId ?? cur.gapId)) || runs.find(g => g.status === "done") || runs[0];
   cur.gapId = sel ? sel.id : null;
@@ -405,10 +415,10 @@ async function loadGaps(pickId) {
 async function pollGaps() {
   clearInterval(gapTimer);
   const tick = async () => {
-    const r = await fetch("api/gaps/" + cur.gapId);
-    if (!r.ok) { clearInterval(gapTimer); return; }
-    cur.gap = await r.json();
-    if (cur.gap.status !== "running") { clearInterval(gapTimer); if (window.spendLights) window.spendLights.refresh(); cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json()); }
+    try {
+      cur.gap = await getJSON("api/gaps/" + cur.gapId);
+      if (cur.gap.status !== "running") { clearInterval(gapTimer); if (window.spendLights) window.spendLights.refresh(); cur.gaps = await getJSON(`api/crawl/${cur.c.id}/gaps`); }
+    } catch (e) { clearInterval(gapTimer); tabError("Pages-to-build run failed to load", e); return "error"; }
     if (cur.tab === "Pages to build") renderGaps();
     return cur.gap.status;
   };
@@ -416,11 +426,11 @@ async function pollGaps() {
 }
 
 async function startGaps() {
-  const r = await fetch(`api/crawl/${cur.c.id}/gaps`, { method: "POST" });
-  const d = await r.json();
-  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); return; }
-  cur.gapId = d.id;
-  cur.gaps = await fetch(`api/crawl/${cur.c.id}/gaps`).then(x => x.json());
+  try {
+    const d = await sendJSON("POST", `api/crawl/${cur.c.id}/gaps`);
+    cur.gapId = d.id;
+    cur.gaps = await getJSON(`api/crawl/${cur.c.id}/gaps`);
+  } catch (e) { tabError("Pages-to-build run failed to start", e); return; }
   pollGaps();
 }
 
@@ -486,21 +496,25 @@ document.addEventListener("change", e => { if (e.target.id === "gappick") { cur.
 const ST_CLASS = { done: "pass", "wrong anchor": "wrong", partial: "partial", missing: "fail", gone: "fail", open: "" };
 
 async function loadProgress(pickId) {
-  const plans = (await fetch(`api/crawl/${cur.c.id}/plans`).then(r => r.ok ? r.json() : [])).filter(p => p.status === "done");
+  let plans;
+  try { plans = (await getJSON(`api/crawl/${cur.c.id}/plans`)).filter(p => p.status === "done"); }
+  catch (e) { $("#tab").innerHTML = errBox(`Link plans failed to load: ${e.message}`); return; }
   cur.pplans = plans;
   const sel = plans.find(p => String(p.id) === String(pickId ?? cur.pplan)) || plans[0];
   cur.pplan = sel ? sel.id : null;
   cur.prog = null; cur.pnote = null;
-  if (sel) { const r = await fetch(`api/plan/${sel.id}/progress`); if (r.ok) cur.prog = await r.json(); }
+  if (sel) {
+    try { cur.prog = await getJSON(`api/plan/${sel.id}/progress`); }
+    catch (e) { $("#tab").innerHTML = errBox(`Progress failed to load: ${e.message}`); return; }
+  }
   renderProgress();
 }
 
 async function checkPlan() {
   const b = $("#checkplan"); b.disabled = true; b.textContent = "Checking…";
-  const r = await fetch(`api/plan/${cur.pplan}/check`, { method: "POST" });
-  const d = await r.json();
-  if (!r.ok) { $("#tab").insertAdjacentHTML("afterbegin", `<div class="err">${esc(d.detail || r.statusText)}</div>`); b.disabled = false; b.textContent = "Check against latest crawl"; return; }
-  cur.prog = d; renderProgress();
+  try { cur.prog = await sendJSON("POST", `api/plan/${cur.pplan}/check`); }
+  catch (e) { tabError("Check failed", e); b.disabled = false; b.textContent = "Check against latest crawl"; return; }
+  renderProgress();
 }
 
 function gscCell(g) {
@@ -594,9 +608,9 @@ function linkTable(rows) {
 $("#f").onsubmit = async e => {
   e.preventDefault();
   $("#go").disabled = true;
-  const res = await fetch("api/crawl?domain=" + encodeURIComponent($("#domain").value), { method: "POST" });
-  const data = await res.json();
-  if (!res.ok) { $("#go").disabled = false; $("#app").innerHTML = `<div class="err">${esc(data.detail || res.statusText)}</div>`; return; }
+  let data;
+  try { data = await sendJSON("POST", "api/crawl?domain=" + encodeURIComponent($("#domain").value)); }
+  catch (e) { $("#go").disabled = false; $("#app").innerHTML = errBox(`Crawl failed to start: ${e.message}`); return; }
   history.pushState(null, "", "?crawl=" + data.id);
   watch(data.id);
 };
