@@ -120,3 +120,9 @@ def test_label_date_is_the_oldest_fetch(c):
         con.execute("UPDATE clickstream_volumes SET fetched_at='2026-10-20T00:00:00+00:00' WHERE keyword='ivory veils'")
         con.commit()
     assert c.get("/api/rankings", params={"range": "all"}).json()["clickstream"]["fetched_at"].startswith("2026-10-20")
+
+
+def test_template_keywords_are_never_sent_to_dataforseo():
+    """'{designer} wedding dresses' made DataForSEO reject the whole batch (#33)."""
+    sent = clickstream._norm(["{designer} wedding dresses", "wedding dresses", "a [b] c", "bridal | gowns", "Lace Dress"])
+    assert sent == ["wedding dresses", "lace dress"]
