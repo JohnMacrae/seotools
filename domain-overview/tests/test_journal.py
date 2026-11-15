@@ -19,7 +19,7 @@ def c(tmp_path, monkeypatch):
         yield client
 
 
-E = {"live_date": "2026-10-01", "page": "/collections/mob", "change_type": "title", "note": "New title"}
+E = {"live_date": "2026-10-01", "page": "/collections/mob", "change_type": "title/meta", "note": "New title"}
 
 
 def test_create_list_newest_first(c):
@@ -38,6 +38,28 @@ def test_create_validates(c):
     assert c.post("/api/journal", json={**E, "page": " "}).status_code == 400
     assert c.post("/api/journal", json={**E, "change_type": ""}).status_code == 400
     assert c.post("/api/journal", json={**E, "source": "repo"}).status_code == 400
+
+
+def test_change_type_from_glossary_list(c):
+    types = c.get("/api/journal").json()["change_types"]
+    assert types == ["new page", "copy", "headings", "title/meta", "internal links", "technical", "backlinks", "GBP"]
+    assert c.post("/api/journal", json={**E, "change_type": "content"}).status_code == 400
+    eid = c.post("/api/journal", json={**E, "change_type": "GBP"}).json()["id"]
+    assert c.put(f"/api/journal/{eid}", json={"change_type": "gbp-ish"}).status_code == 400
+
+
+def test_editable_flag_and_auto_ref(c):
+    auto = c.post("/api/journal", json=E).json()
+    named = c.post("/api/journal", json={**E, "ref": "gbp-1"}).json()
+    assert auto["editable"] and auto["auto_ref"] and not named["auto_ref"]
+    # blanking a named ref goes back to an automatic one
+    r = c.put(f"/api/journal/{named['id']}", json={"ref": ""}).json()
+    assert r["auto_ref"] and r["ref"] != "gbp-1"
+    with main.closing(main.db()) as con:
+        journal.insert(con, {**E, "source": "repo", "ref": "abc123"})
+        con.commit()
+    repo = next(e for e in c.get("/api/journal").json()["entries"] if e["source"] == "repo")
+    assert not repo["editable"] and not repo["auto_ref"]
 
 
 def test_update_and_delete_manual(c):
@@ -100,6 +122,7 @@ def test_journal_is_per_site(c):
     ("*", "/anything", True),
     ("/", "https://serenitybrides.com", True),
     ("", "/x", False),
+    ("dresses/*", "/dresses/lace", True),  # missing leading slash is added
 ])
 def test_pattern_matching(pattern, page, ok):
     assert journal.matches(pattern, page) is ok
