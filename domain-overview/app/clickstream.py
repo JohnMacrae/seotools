@@ -29,8 +29,13 @@ def norm_keyword(keyword: str) -> str:
     return keyword.strip().lower()
 
 
+def sendable(keyword: str) -> bool:
+    """False for keywords DataForSEO rejects (and rejects the whole batch for), such as '{designer} wedding dresses'."""
+    return not any(ch in keyword for ch in "{}[]<>|\\^~")
+
+
 def _norm(keywords) -> list[str]:
-    return list(dict.fromkeys(norm_keyword(k) for k in keywords if k and k.strip()))
+    return list(dict.fromkeys(norm_keyword(k) for k in keywords if k and k.strip() and sendable(k)))
 
 
 def _todo(con, keywords, now) -> tuple[list[str], int]:
