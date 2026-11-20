@@ -522,6 +522,7 @@ def api_flow(start: str | None = None, end: str | None = None, traffic: str = "o
         raise HTTPException(503 if not ga4.configured() else 502, str(err))
     return {"flow": flow.build_flow(roots), "window": {"start": s.isoformat(), "end": e.isoformat()},
             "traffic": traffic, "source": "GA4", "measure": "active users", "collapse": flow.COLLAPSE,
+            "arrivals_followed": ga4.ARRIVALS, "branching": list(ga4.BRANCH),
             "fetched_at": ga4.fetched_at(s.isoformat(), e.isoformat(), traffic == "organic")}
 
 

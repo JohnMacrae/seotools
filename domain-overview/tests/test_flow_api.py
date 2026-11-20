@@ -70,6 +70,7 @@ def test_organic_flow_with_source_and_as_of(env):
     r = client.get("/api/flow?start=2026-10-01&end=2026-10-28")
     assert r.status_code == 200, r.text
     d = r.json()
+    assert d["measure"] == "active users" and d["arrivals_followed"] == ga4.ARRIVALS
     assert d["source"] == "GA4" and d["traffic"] == "organic" and d["fetched_at"]
     assert d["window"] == {"start": "2026-10-01", "end": "2026-10-28"}
     assert d["flow"]["total"] == 100  # "/" and "/?utm=1" are one arrival page

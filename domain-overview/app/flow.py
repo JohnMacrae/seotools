@@ -57,7 +57,7 @@ def build_flow(roots: list[dict], collapse: float = COLLAPSE) -> dict:
     inflow: dict[str, int] = {}
     for (a, b), u in links.items():
         inflow[b] = inflow.get(b, 0) + u
-    users.update({k: v for k, v in inflow.items()})
+    users.update(inflow)
 
     # Fold small pages into their column's "Other"; their own onward links go with them.
     small = {n for n in label if _kind(n) == "page" and users[n] < collapse * total}
@@ -78,6 +78,6 @@ def build_flow(roots: list[dict], collapse: float = COLLAPSE) -> dict:
     ids = {n for pair in merged for n in pair} | {n for n in label if col_of[n] == 0 and n not in small}
     columns: list[list[dict]] = [[] for _ in range(max(col_of[n] for n in ids) + 1)]
     for n in sorted(ids, key=lambda n: (col_of[n], order[_kind(n)], -users[n], label[n])):
-        columns[col_of[n]].append({"id": n, "label": label[n], "users": users[n]})
+        columns[col_of[n]].append({"id": n, "kind": _kind(n), "label": label[n], "users": users[n]})
     return {"total": total, "columns": columns,
             "links": [{"source": a, "target": b, "users": u} for (a, b), u in merged.items()]}

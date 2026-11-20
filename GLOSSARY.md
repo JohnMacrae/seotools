@@ -118,7 +118,7 @@ The last page of a session.
 _Avoid_: last page, bounce page
 
 **Visitor flow**:
-The path sessions take from arrival page through the pages that follow to the exit page, drawn as a flow whose band widths are session counts. Defaults to organic search sessions.
+The path sessions take from arrival page through the pages that follow to the exit page, drawn as a flow whose band widths are GA4 active users (see Session). Defaults to organic search.
 _Avoid_: funnel, journey, user flow
 
 **Keyword estimate**:

@@ -62,3 +62,8 @@ def test_empty_input():
 def test_next_page_with_no_users_is_ignored():
     f = flow.build_flow([node("/", 10, node("/ghost", 0), node("/bridal", 10))])
     assert labels(f)[1] == ["/bridal"]
+
+
+def test_nodes_say_what_kind_they_are():
+    f = flow.build_flow([node("/", 10, node("/bridal", 5), exits=3)])
+    assert [(n["label"], n["kind"]) for n in f["columns"][1]] == [("/bridal", "page"), ("Other", "other"), ("Exit", "exit")]

@@ -67,16 +67,15 @@ function layout(f) {
   const pos = {};
   cols.forEach((c, i) => {
     let y = 0;
-    c.forEach(nd => { pos[nd.id] = {...nd, x: colX(i), y, h: Math.max(2, nd.users * scale), out: false, inOff: 0, outOff: 0}; y += Math.max(2, nd.users * scale) + GAP; });
+    c.forEach(nd => { pos[nd.id] = {...nd, x: colX(i), y, h: Math.max(2, nd.users * scale), out: nd.kind !== "page", inOff: 0, outOff: 0}; y += Math.max(2, nd.users * scale) + GAP; });
   });
-  cols.forEach(c => c.forEach(nd => { pos[nd.id].out = /^[xo]/.test(nd.id); }));
   return {pos, scale};
 }
 
 function draw(d) {
   const f = d.flow;
-  $("hdr").textContent = `${d.source} · ${d.window.start} to ${d.window.end} · ${d.traffic === "organic" ? "organic search" : "all traffic"} · fetched ${d.fetched_at || "just now"}`;
-  $("intro").textContent = `Arrival page, up to ${f.columns.length - 1} pages after it, then where visitors left. Band width is ${d.measure} (GA4 funnel counts users, not sessions). Pages under ${d.collapse * 100}% of the total are folded into Other; Other also holds visitors to pages not followed further.`;
+  $("hdr").textContent = `${d.source} · ${d.window.start} to ${d.window.end} · ${d.traffic === "organic" ? "organic search" : "all traffic"} · fetched ${d.fetched_at}`;
+  $("intro").textContent = `Arrival page, up to ${f.columns.length - 1} pages after it, then where visitors left. Band width is GA4 ${d.measure}. Only the top ${d.arrivals_followed} arrival pages are followed, and after each step only the top ${d.branching.join(", ")} pages, so the total covers those arrivals, not the whole site. Counts for pages after the first are scaled to the users the previous page sent them, so they are estimates. Pages under ${d.collapse * 100}% of the total are folded into Other, which also holds visitors to pages not followed. GA4 data only starts when tracking began.`;
   if (!f.total) { $("flow").innerHTML = '<div class="sub">GA4 has no visits for this window and filter.</div>'; return; }
   const {pos, scale} = layout(f);
   const links = f.links.slice().sort((a, b) => pos[a.target].y - pos[b.target].y);
