@@ -6,6 +6,7 @@ services:
     env_file: .env
     environment:
       SERENITY_REPO_PATH: /repos/sweb-live  # Serenity's repo_path when the site registry is first seeded (the mount below)
+      GA4_PROPERTY_ID: "292463555"  # Serenity Brides GA4 property for the visitor flow; the key mounted below must be a Viewer on it
     ports:
       - "8095:8000"
     volumes:

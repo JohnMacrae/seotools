@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visitor flow</title>
+<style>
+  :root { --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --bad: #d64545; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4;
+    color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --bad: #f07171; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; } }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; overflow-x: auto; }
+  input, button { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--card); color: var(--ink); }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .tabs { display: flex; gap: 8px; }
+  .tabs button { background: var(--card); color: var(--ink); border-color: var(--line); } .tabs button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  h2 { font-size: 15px; margin: 0 0 6px; }
+  svg { display: block; min-width: 900px; }
+  .ribbon { fill: var(--accent); opacity: .3; } .ribbon:hover { opacity: .55; }
+  .ribbon.out { fill: var(--muted); }
+  .node { fill: var(--accent); } .node.out { fill: var(--muted); }
+  text { fill: var(--ink); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="rankings">Rankings</a><a href="journal">Journal</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a><a href="flow" class="on">Visitor flow</a></nav></div>
+</header>
+<main>
+  <div id="err"></div>
+  <div class="bar">
+    <div class="tabs" id="traffic"><button data-traffic="organic">Organic search</button><button data-traffic="all">All traffic</button></div>
+    <label>From <input type="date" id="start"></label><label>To <input type="date" id="end"></label>
+    <button id="load">Show</button><span class="sub" id="hdr"></span>
+  </div>
+  <div class="card">
+    <h2>Visitor flow</h2>
+    <div class="sub" id="intro"></div>
+    <div id="flow"></div>
+  </div>
+</main>
+<script src="fetchjson.js"></script>
+<script src="sitemenu.js"></script>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+const num = n => Math.round(n).toLocaleString();
+const store = (k, v) => { try { if (v === undefined) return localStorage.getItem("flow." + k); localStorage.setItem("flow." + k, v); } catch { return null; } };
+let traffic = store("traffic") === "all" ? "all" : "organic";
+const W = 1100, H = 560, NODE_W = 14, GAP = 8, LABEL = 190;
+
+function layout(f) {
+  const cols = f.columns, n = cols.length;
+  const colX = i => (n === 1 ? 0 : i * ((W - LABEL - NODE_W) / (n - 1)));
+  const scale = Math.min(...cols.map(c => (H - GAP * (c.length - 1)) / Math.max(1, c.reduce((a, x) => a + x.users, 0))));
+  const pos = {};
+  cols.forEach((c, i) => {
+    let y = 0;
+    c.forEach(nd => { pos[nd.id] = {...nd, x: colX(i), y, h: Math.max(2, nd.users * scale), out: false, inOff: 0, outOff: 0}; y += Math.max(2, nd.users * scale) + GAP; });
+  });
+  cols.forEach(c => c.forEach(nd => { pos[nd.id].out = /^[xo]/.test(nd.id); }));
+  return {pos, scale};
+}
+
+function draw(d) {
+  const f = d.flow;
+  $("hdr").textContent = `${d.source} · ${d.window.start} to ${d.window.end} · ${d.traffic === "organic" ? "organic search" : "all traffic"} · fetched ${d.fetched_at || "just now"}`;
+  $("intro").textContent = `Arrival page, up to ${f.columns.length - 1} pages after it, then where visitors left. Band width is ${d.measure} (GA4 funnel counts users, not sessions). Pages under ${d.collapse * 100}% of the total are folded into Other; Other also holds visitors to pages not followed further.`;
+  if (!f.total) { $("flow").innerHTML = '<div class="sub">GA4 has no visits for this window and filter.</div>'; return; }
+  const {pos, scale} = layout(f);
+  const links = f.links.slice().sort((a, b) => pos[a.target].y - pos[b.target].y);
+  const paths = links.map(l => {
+    const s = pos[l.source], t = pos[l.target], h = l.users * scale;
+    const y0 = s.y + s.outOff, y1 = t.y + t.inOff; s.outOff += h; t.inOff += h;
+    const x0 = s.x + NODE_W, x1 = t.x, mx = (x0 + x1) / 2;
+    return `<path class="ribbon ${t.out ? "out" : ""}" d="M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1} L${x1},${y1 + h} C${mx},${y1 + h} ${mx},${y0 + h} ${x0},${y0 + h} Z"><title>${esc(s.label)} → ${esc(t.label)}: ${num(l.users)}</title></path>`;
+  }).join("");
+  const nodes = Object.values(pos).map(p =>
+    `<rect class="node ${p.out ? "out" : ""}" x="${p.x}" y="${p.y}" width="${NODE_W}" height="${p.h}"><title>${esc(p.label)}: ${num(p.users)}</title></rect>` +
+    (p.h > 12 ? `<text x="${p.x + NODE_W + 6}" y="${p.y + p.h / 2 + 4}">${esc(p.label)} · ${num(p.users)} (${(p.users / f.total * 100).toFixed(0)}%)</text>` : "")).join("");
+  $("flow").innerHTML = `<svg viewBox="0 0 ${W} ${H + 20}" width="100%" role="img" aria-label="Visitor flow">${paths}${nodes}</svg>`;
+}
+
+async function load(refresh) {
+  $("err").innerHTML = "";
+  document.querySelectorAll("#traffic button").forEach(b => b.classList.toggle("on", b.dataset.traffic === traffic));
+  const q = new URLSearchParams({traffic});
+  if ($("start").value) q.set("start", $("start").value);
+  if ($("end").value) q.set("end", $("end").value);
+  if (refresh) q.set("refresh", "true");
+  $("flow").innerHTML = '<div class="sub">Loading from GA4 (about a minute the first time, then cached for an hour)...</div>';
+  try {
+    const d = await getJSON("api/flow?" + q);
+    $("start").value = d.window.start; $("end").value = d.window.end;
+    draw(d);
+  } catch (e) { $("flow").innerHTML = ""; $("err").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+document.querySelectorAll("#traffic button").forEach(b => b.onclick = () => { traffic = b.dataset.traffic; store("traffic", traffic); load(false); });
+$("load").onclick = () => load(false);
+load(false);
+</script>
+</body>
+</html>

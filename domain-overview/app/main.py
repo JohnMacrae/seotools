@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import clickstream, compare, crawl, dfs, digest, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
+from . import clickstream, compare, crawl, dfs, digest, flow, ga4, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -495,6 +495,34 @@ def journal_page():
 @app.get("/digest")
 def digest_page():
     return FileResponse(STATIC / "digest.html")
+
+
+@app.get("/flow")
+def flow_page():
+    return FileResponse(STATIC / "flow.html")
+
+
+@app.get("/api/flow")
+def api_flow(start: str | None = None, end: str | None = None, traffic: str = "organic", refresh: bool = False):
+    """Visitor flow (#56): GA4 arrival → following pages → exit, organic search by default, free to call."""
+    if traffic not in ("organic", "all"):
+        raise HTTPException(400, "traffic must be organic or all")
+    try:
+        e = dt.date.fromisoformat(end) if end else dt.date.today() - dt.timedelta(days=1)
+        s = dt.date.fromisoformat(start) if start else e - dt.timedelta(days=27)
+    except ValueError:
+        raise HTTPException(400, "start and end must be YYYY-MM-DD")
+    if s > e:
+        raise HTTPException(400, "start is after end")
+    if not ga4.property_id():
+        raise HTTPException(503, "No GA4 property configured for this site")
+    try:
+        roots = ga4.fetch_roots(s.isoformat(), e.isoformat(), traffic == "organic", refresh)
+    except ga4.GA4Error as err:
+        raise HTTPException(503 if not ga4.configured() else 502, str(err))
+    return {"flow": flow.build_flow(roots), "window": {"start": s.isoformat(), "end": e.isoformat()},
+            "traffic": traffic, "source": "GA4", "measure": "active users", "collapse": flow.COLLAPSE,
+            "fetched_at": ga4.fetched_at(s.isoformat(), e.isoformat(), traffic == "organic")}
 
 
 @app.post("/api/crawl")

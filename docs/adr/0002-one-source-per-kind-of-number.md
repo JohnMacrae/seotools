@@ -8,6 +8,9 @@ DataForSEO Labs is a database snapshot that lags weeks to months, and for sereni
 - **Volume of a keyword target:** the targets doc (`docs/keyword-targets.md`, Google Ads UK monthly), wherever that keyword appears. Amended 2026-11-15: the rank tracker also shows DataForSEO clickstream volume beside it, labelled and dated, fetched only on request and cached for 30 days. The Ads figure stays the one used for sorting and decisions.
 - **Volume of other keywords, KD, traffic and traffic value:** Labs, labelled as an estimate. Search Console impressions are shown alongside where we have them.
 - **Map pack ranks (ours and theirs):** the map-pack run, since Search Console has no pack data. Our organic position on that page is shown next to the Search Console figure, which is the one to trust.
+- **Sessions, arrival and exit pages, paths (serenitybrides.com only):** GA4, labelled with its source and "as of" date. Added 2026-11-20.
+- **Edge requests per page (serenitybrides.com only):** Cloudflare, labelled as including bots and non-JS hits; a cross-check on GA4, never the flow source. Added 2026-11-20.
+- **Keyword behind a session's arrival page:** Search Console queries for that page, labelled an estimate (GA4 hides organic keywords).
 
 ## Consequences
 

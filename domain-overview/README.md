@@ -42,6 +42,13 @@ The **Health** tab shows orphans, contextual orphans (linked only from nav/foote
 dead ends, non-indexable pages, title/H1/description problems, click depth and pages by section. Results are linkable with `?crawl=ID`.
 Other tabs (strength, topic map, template rules, to-dos) are placeholders for later work.
 
+## Visitor flow (`/flow`)
+
+Serenity only (#56). GA4 (property `GA4_PROPERTY_ID`; the Search Console key must be a Viewer on it) gives the arrival
+pages (organic search sessions by landing page) and, from the funnel report, the pages visitors go to next, up to 3 after
+the arrival page. Counts are GA4 active users. Free; the result is cached for an hour (`refresh=true` bypasses it).
+Pages under 1% of users fold into Other. Exit pages are derived (no next action). The keyword estimate is a later ticket.
+
 Tests (no host Python needed; runs all of `tests/` in parallel (`pytest -n auto`, about 2 minutes) in a python:3.12 image with `requirements-dev.txt` baked in; `--build` rebuilds it when `Dockerfile.tests` or the requirements change, cached otherwise). The pre-commit hook runs them before every commit, and the post-merge hook after every merge or pull (warns on failure; `SKIP_POST_MERGE_TESTS=1` skips):
 
 ```
