@@ -22,6 +22,7 @@ API = "https://analyticsdata.googleapis.com/{version}/properties/{prop}:{method}
 ARRIVALS = 5            # arrival pages followed, by organic sessions
 BRANCH = (3, 2, 2)      # pages followed after each step (a funnel next action returns at most 5)
 NO_NEXT = "(no next action)"
+WORKERS = 6
 CACHE_SECONDS = 3600
 CACHE: dict[tuple, tuple[float, list[dict]]] = {}
 
@@ -114,13 +115,26 @@ def _fit(node: dict, users: int) -> dict:
             "next": [{**k, "users": round(k["users"] * f)} for k in node["next"]]}
 
 
-def _grow(prop: str, chain: list[str], start: str, end: str, organic: bool, pool: ThreadPoolExecutor) -> dict:
-    node = _expand(prop, chain, start, end, organic)
-    if len(chain) <= len(BRANCH):
-        keep = node["next"][:BRANCH[len(chain) - 1]]
-        node["next"] = list(pool.map(lambda k: _fit(_grow(prop, chain + [k["page"]], start, end, organic, pool), k["users"]),
-                                     keep)) if len(chain) < len(BRANCH) else keep
-    return node
+def _grow(prop: str, pages: list[str], start: str, end: str, organic: bool) -> list[dict]:
+    """Arrival trees, one level at a time so a single pool never waits on its own tasks."""
+    def expand(chain, parent_users=None):
+        node = _expand(prop, chain, start, end, organic)
+        return node if parent_users is None else _fit(node, parent_users)
+
+    with ThreadPoolExecutor(WORKERS) as pool:
+        roots = list(pool.map(lambda p: expand([p]), pages))
+        frontier = [(r, [r["page"]]) for r in roots]
+        for depth, width in enumerate(BRANCH):
+            for node, _chain in frontier:
+                node["next"] = node["next"][:width]
+            if depth == len(BRANCH) - 1:
+                break
+            kids = [(node, k, chain + [k["page"]]) for node, chain in frontier for k in node["next"]]
+            grown = list(pool.map(lambda t: expand(t[2], t[1]["users"]), kids))
+            for (node, k, _c), g in zip(kids, grown):
+                node["next"][node["next"].index(k)] = g
+            frontier = [(g, c) for (_n, _k, c), g in zip(kids, grown)]
+    return roots
 
 
 def fetch_roots(start: str, end: str, organic: bool, refresh: bool = False) -> list[dict]:
@@ -134,8 +148,7 @@ def fetch_roots(start: str, end: str, organic: bool, refresh: bool = False) -> l
         return hit[1]
     try:
         pages = arrival_pages(prop, start, end, organic)
-        with ThreadPoolExecutor(6) as arrivals_pool, ThreadPoolExecutor(6) as pool:
-            roots = list(arrivals_pool.map(lambda p: _grow(prop, [p], start, end, organic, pool), pages))
+        roots = _grow(prop, pages, start, end, organic)
     except httpx.HTTPError as e:
         raise GA4Error(f"GA4 API: {type(e).__name__}: {e}"[:300])
     CACHE[key] = (time.time(), roots)
