@@ -15,7 +15,7 @@ from app import ga4, main  # noqa: E402
 TREE = {
     ("/",): (100, {"/bridal": 60, "/book": 20}, 20),
     ("/", "/bridal"): (60, {"/dress/a": 30}, 30),
-    ("/", "/book"): (20, {}, 20),
+    ("/", "/book"): (40, {}, 40),  # GA4 counts all 40 who reached /book later; the arrival page sent 20
     ("/", "/bridal", "/dress/a"): (30, {}, 30),
 }
 
@@ -74,6 +74,8 @@ def test_organic_flow_with_source_and_as_of(env):
     assert d["window"] == {"start": "2026-10-01", "end": "2026-10-28"}
     assert d["flow"]["total"] == 100  # "/" and "/?utm=1" are one arrival page
     assert labels(d["flow"]) == [["/"], ["/bridal", "/book", "Exit"], ["/dress/a", "Exit"], ["Exit"]]
+    links = {(l["source"], l["target"]): l["users"] for l in d["flow"]["links"]}
+    assert links[("0:/", "1:/book")] == 20 and links[("1:/book", "x2")] == 20
     organic = [c for c in fake.calls if "Organic Search" in repr(c[2])]
     assert len(organic) == len(fake.calls)
 

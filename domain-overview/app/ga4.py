@@ -68,10 +68,7 @@ def _page_step(i: int, page: str, organic: bool) -> dict:
     expr = _field("pagePathPlusQueryString", "^" + re.escape(page) + r"(\?.*)?$", "FULL_REGEXP")
     if i == 0 and organic:
         expr = {"andGroup": {"expressions": [expr, _field("sessionDefaultChannelGroup", "Organic Search")]}}
-    step = {"name": f"s{i + 1}", "filterExpression": expr}
-    if i:
-        step["isDirectlyFollowedBy"] = True
-    return step
+    return {"name": f"s{i + 1}", "filterExpression": expr}
 
 
 def arrival_pages(prop: str, start: str, end: str, organic: bool) -> list[str]:
@@ -109,12 +106,20 @@ def _expand(prop: str, chain: list[str], start: str, end: str, organic: bool) ->
                      for p, n in sorted(nexts.items(), key=lambda x: -x[1])]}
 
 
+def _fit(node: dict, users: int) -> dict:
+    """The funnel counts everyone who reached the page after the arrival, not only those who went straight there.
+    Scale the node to the users the parent's next action sent to it, so a parent's children add up."""
+    f = min(1.0, users / node["users"]) if node["users"] else 0.0
+    return {"page": node["page"], "users": users, "exits": round(node["exits"] * f),
+            "next": [{**k, "users": round(k["users"] * f)} for k in node["next"]]}
+
+
 def _grow(prop: str, chain: list[str], start: str, end: str, organic: bool, pool: ThreadPoolExecutor) -> dict:
     node = _expand(prop, chain, start, end, organic)
     if len(chain) <= len(BRANCH):
         keep = node["next"][:BRANCH[len(chain) - 1]]
-        node["next"] = list(pool.map(lambda k: _grow(prop, chain + [k["page"]], start, end, organic, pool), keep)) \
-            if len(chain) < len(BRANCH) else keep
+        node["next"] = list(pool.map(lambda k: _fit(_grow(prop, chain + [k["page"]], start, end, organic, pool), k["users"]),
+                                     keep)) if len(chain) < len(BRANCH) else keep
     return node
 
 
