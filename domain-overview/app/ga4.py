@@ -46,8 +46,9 @@ def _token() -> str:
     return creds.token
 
 
-def _request(version: str, method: str, body: dict) -> dict:
-    r = httpx.post(API.format(version=version, prop=property_id(), method=method), json=body, timeout=120,
+def _request(version: str, method: str, body: dict, prop: str) -> dict:
+    """One GA4 call; `prop` is passed in because worker threads do not see the active site."""
+    r = httpx.post(API.format(version=version, prop=prop, method=method), json=body, timeout=120,
                    headers={"Authorization": f"Bearer {_token()}"})
     if r.status_code != 200:
         raise GA4Error(f"GA4 API {r.status_code}: {r.text[:300]}")
@@ -73,26 +74,26 @@ def _page_step(i: int, page: str, organic: bool) -> dict:
     return step
 
 
-def arrival_pages(start: str, end: str, organic: bool) -> list[str]:
+def arrival_pages(prop: str, start: str, end: str, organic: bool) -> list[str]:
     body = {"dateRanges": [{"startDate": start, "endDate": end}], "dimensions": [{"name": "landingPage"}],
             "metrics": [{"name": "sessions"}], "limit": 1000}
     if organic:
         body["dimensionFilter"] = {"filter": {"fieldName": "sessionDefaultChannelGroup",
                                               "stringFilter": {"matchType": "EXACT", "value": "Organic Search"}}}
     totals: dict[str, int] = {}
-    for r in _request("v1beta", "runReport", body).get("rows", []):
+    for r in _request("v1beta", "runReport", body, prop).get("rows", []):
         p = clean(r["dimensionValues"][0]["value"])
         totals[p] = totals.get(p, 0) + int(r["metricValues"][0]["value"])
     return [p for p, _ in sorted(totals.items(), key=lambda x: -x[1])][:ARRIVALS]
 
 
-def _expand(chain: list[str], start: str, end: str, organic: bool) -> dict:
+def _expand(prop: str, chain: list[str], start: str, end: str, organic: bool) -> dict:
     """The node for the last page of `chain`: users reaching it through the chain, users leaving, and next pages."""
     body = {"dateRanges": [{"startDate": start, "endDate": end}],
             "funnel": {"isOpenFunnel": False, "steps": [_page_step(i, p, organic) for i, p in enumerate(chain)]},
             "funnelNextAction": {"nextActionDimension": {"name": "pagePathPlusQueryString"}, "limit": 5}}
     users, exits, nexts = 0, 0, {}
-    for r in _request("v1alpha", "runFunnelReport", body).get("funnelVisualization", {}).get("rows", []):
+    for r in _request("v1alpha", "runFunnelReport", body, prop).get("funnelVisualization", {}).get("rows", []):
         step, action = (d["value"] for d in r["dimensionValues"])
         if int(step.split(".")[0]) != len(chain):
             continue
@@ -108,11 +109,11 @@ def _expand(chain: list[str], start: str, end: str, organic: bool) -> dict:
                      for p, n in sorted(nexts.items(), key=lambda x: -x[1])]}
 
 
-def _grow(chain: list[str], start: str, end: str, organic: bool, pool: ThreadPoolExecutor) -> dict:
-    node = _expand(chain, start, end, organic)
+def _grow(prop: str, chain: list[str], start: str, end: str, organic: bool, pool: ThreadPoolExecutor) -> dict:
+    node = _expand(prop, chain, start, end, organic)
     if len(chain) <= len(BRANCH):
         keep = node["next"][:BRANCH[len(chain) - 1]]
-        node["next"] = list(pool.map(lambda k: _grow(chain + [k["page"]], start, end, organic, pool), keep)) \
+        node["next"] = list(pool.map(lambda k: _grow(prop, chain + [k["page"]], start, end, organic, pool), keep)) \
             if len(chain) < len(BRANCH) else keep
     return node
 
@@ -121,14 +122,15 @@ def fetch_roots(start: str, end: str, organic: bool, refresh: bool = False) -> l
     """Arrival trees for the window, cached an hour (the funnel report costs a call per node)."""
     if not configured():
         raise GA4Error("No GA4 property configured for this site")
-    key = (property_id(), start, end, organic)
+    prop = property_id()
+    key = (prop, start, end, organic)
     hit = CACHE.get(key)
     if hit and not refresh and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
     try:
-        pages = arrival_pages(start, end, organic)
+        pages = arrival_pages(prop, start, end, organic)
         with ThreadPoolExecutor(6) as arrivals_pool, ThreadPoolExecutor(6) as pool:
-            roots = list(arrivals_pool.map(lambda p: _grow([p], start, end, organic, pool), pages))
+            roots = list(arrivals_pool.map(lambda p: _grow(prop, [p], start, end, organic, pool), pages))
     except httpx.HTTPError as e:
         raise GA4Error(f"GA4 API: {type(e).__name__}: {e}"[:300])
     CACHE[key] = (time.time(), roots)

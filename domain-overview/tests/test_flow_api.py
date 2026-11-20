@@ -24,8 +24,9 @@ class FakeGA4:
     def __init__(self, fail=None):
         self.calls, self.fail = [], fail
 
-    def __call__(self, version, method, body):
+    def __call__(self, version, method, body, prop):
         self.calls.append((version, method, body))
+        assert prop == "123"  # worker threads must still address the active site's property
         if self.fail:
             raise ga4.GA4Error(self.fail)
         if method == "runReport":
