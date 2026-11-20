@@ -57,3 +57,8 @@ def test_following_steps_stop_after_three():
 
 def test_empty_input():
     assert flow.build_flow([]) == {"total": 0, "columns": [], "links": []}
+
+
+def test_next_page_with_no_users_is_ignored():
+    f = flow.build_flow([node("/", 10, node("/ghost", 0), node("/bridal", 10))])
+    assert labels(f)[1] == ["/bridal"]

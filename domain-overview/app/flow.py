@@ -40,6 +40,8 @@ def build_flow(roots: list[dict], collapse: float = COLLAPSE) -> dict:
             return
         kids = sum(k["users"] for k in n["next"])
         for k in n["next"]:
+            if k["users"] <= 0:
+                continue
             kid = put(col + 1, k["page"])
             add(nid, kid, k["users"])
             walk(k, col + 1, kid)
