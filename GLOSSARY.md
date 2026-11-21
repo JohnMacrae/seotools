@@ -103,6 +103,28 @@ _Avoid_: log, change note, annotation
 The day a change became visible on the live site (the deploy that shipped it), not the day it was committed or merged. Marked "approx" when only the merge date is known.
 _Avoid_: change date, commit date, deploy date
 
+## Visitor flow
+
+**Session**:
+One visit to the site by one visitor, as GA4 counts it; a click from Google is not a session, and the two figures differ. GA4's funnel report, which the visitor flow uses for paths, counts active users rather than sessions, so flow band widths are labelled users.
+_Avoid_: visit (unqualified), hit, click (that is Search Console's term)
+
+**Arrival page**:
+The first page of a session.
+_Avoid_: landing page, entry page
+
+**Exit page**:
+The last page of a session.
+_Avoid_: last page, bounce page
+
+**Visitor flow**:
+The path sessions take from arrival page through the pages that follow to the exit page, drawn as a flow whose band widths are GA4 active users (see Session). Defaults to organic search.
+_Avoid_: funnel, journey, user flow
+
+**Keyword estimate**:
+The Search Console queries that drove clicks to an arrival page, shown beside its flow. An estimate: GA4 reports organic keywords as "(not provided)", so no keyword is tied to an individual session.
+_Avoid_: session keyword, referring keyword
+
 ## Reviews
 
 **Clicks lost**: estimated clicks a query is missing in the last 28 data days. Low-CTR query: impressions × expected CTR for its position − clicks. Page-2 query: impressions × 5% (position-5 CTR) − clicks, floored at 0. An estimate for ranking opportunities, not a measured figure.
