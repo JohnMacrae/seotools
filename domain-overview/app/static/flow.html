@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visitor flow</title>
+<style>
+  :root { --bg: #f5f6f8; --card: #fff; --ink: #1d2433; --muted: #6b7385; --line: #e3e6ec; --accent: #2f6fde; --radius: 10px;
+    --on-accent: #fff; --bad-bg: #fdeaea; --bad-line: #f3c2c2; --bad-ink: #8a1f1f; --subtle: #eef0f4; --band: rgba(47,111,222,.22); color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #12151c; --card: #1b2029; --ink: #e4e7ee; --muted: #9aa3b5; --line: #2c3340; --accent: #6b9cf0; --on-accent: #0b1220; --bad-bg: #3a1f22; --bad-line: #5c2a2e; --bad-ink: #f3b0b0; --subtle: #252b36; --band: rgba(107,156,240,.28); } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .top { display: flex; gap: 18px; align-items: center; }
+  .top h1 { font-size: 16px; margin: 0; }
+  nav a { color: var(--muted); margin-right: 14px; text-decoration: none; } nav a.on { color: var(--ink); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; overflow-x: auto; }
+  input, button, select { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--card); color: var(--ink); }
+  button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; }
+  button.ghost { background: var(--card); color: var(--ink); border-color: var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--subtle); } tr.focus td { background: var(--subtle); font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .bar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .bar label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  .err { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid var(--bad-line); padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .note { background: var(--subtle); border: 1px solid var(--line); padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; background: var(--subtle); color: var(--muted); border: 1px solid var(--line); }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  svg text { fill: var(--ink); font-size: 11px; }
+  svg rect { fill: var(--accent); }
+  svg path { fill: var(--band); }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>SEO tools</h1><nav><a href="./">Domain overview</a><a href="compare">Competitor gap</a><a href="linking">Internal linking</a><a href="rankings">Rankings</a><a href="journal">Journal</a><a href="targets">Keyword targets</a><a href="mappack">Map pack</a><a href="digest">Digest</a><a href="flow" class="on">Visitor flow</a></nav></div>
+</header>
+<main>
+  <div id="err"></div>
+  <div class="card">
+    <form class="bar" id="ctl">
+      <label>Traffic <select name="traffic"><option value="organic">Organic search</option><option value="all">All traffic</option></select></label>
+      <label>From <input type="date" name="start"></label>
+      <label>To <input type="date" name="end"></label>
+      <button type="submit">Show</button>
+      <button type="button" class="ghost" id="last28">Last 28 days</button>
+      <button type="button" class="ghost" id="unfocus" hidden>Show every arrival page</button>
+    </form>
+    <div class="sub" id="sources" style="margin-top:8px"></div>
+  </div>
+  <div class="card"><h2>Visitor flow</h2><div id="paths"></div><div id="diagram"></div></div>
+  <div class="card"><h2>Arrival pages</h2><div id="tbl"></div></div>
+</main>
+<script src="fetchjson.js"></script>
+<script src="sitemenu.js"></script>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+const form = $("ctl");
+let focus = null;
+const COLS = ["Arrival page", "Step 1", "Step 2", "Step 3", "Exit page"];
+const path = u => { try { return new URL(u).pathname; } catch (e) { return u; } };
+const pct = x => x == null ? "–" : (x * 100).toFixed(1) + "%";
+const num = x => x == null ? "–" : Math.round(x).toLocaleString();
+
+async function load(useDefaults) {
+  $("err").innerHTML = "";
+  const p = new URLSearchParams({traffic: form.traffic.value});
+  if (!useDefaults && form.start.value) p.set("start", form.start.value);
+  if (!useDefaults && form.end.value) p.set("end", form.end.value);
+  if (focus) p.set("arrival", focus);
+  let j;
+  try { j = await getJSON("api/flow?" + p); }
+  catch (e) {
+    $("err").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    $("diagram").innerHTML = $("tbl").innerHTML = $("paths").innerHTML = $("sources").innerHTML = "";
+    return;
+  }
+  form.start.value = j.window.start; form.end.value = j.window.end;
+  $("unfocus").hidden = !focus;
+  const s = j.sources.sessions, q = j.sources.queries;
+  $("sources").innerHTML = `Sessions, arrival pages${j.paths ? ", paths and exit pages" : ""}: <b>${esc(s.source)}</b> property ${esc(s.property)},
+    ${esc(j.window.start)} to ${esc(j.window.end)}, as of ${esc(s.as_of)} UTC.
+    ${s.first_day ? `GA4 data in this window starts ${esc(s.first_day)}.` : "GA4 has no sessions in this window (tracking may not have started yet)."}
+    Queries: <b>${esc(q.source)}</b> clicks, a keyword estimate joined on arrival page, as of ${q.as_of ? esc(q.as_of) : "no data"}.
+    GA4 sessions and Search Console clicks are different counts.`;
+  $("paths").innerHTML = j.paths ? "" : `<div class="note">${esc(j.paths_note)}</div>`;
+  diagram(j.flow);
+  table(j.flow);
+}
+
+function diagram(f) {
+  const cols = f.columns.filter(c => c.length);
+  if (!f.total_sessions) { $("diagram").innerHTML = `<div class="sub">No sessions in this window.</div>`; return; }
+  const W = 1100, colW = 14, gap = 6, H = 420, pad = 20;
+  const total = Math.max(...f.columns.map(c => c.reduce((a, n) => a + n.sessions, 0)));
+  const n = f.columns.length, xStep = n > 1 ? (W - 200) / (n - 1) : 0;
+  const pos = {};
+  let out = "";
+  f.columns.forEach((c, ci) => {
+    const x = 10 + ci * xStep;
+    const scale = (H - pad - gap * Math.max(0, c.length - 1)) / total;
+    let y = pad;
+    if (c.length) out += `<text x="${x}" y="12">${esc(COLS[n === 1 ? 0 : ci])}</text>`;
+    c.forEach(node => {
+      const h = Math.max(1, node.sessions * scale);
+      pos[ci + "|" + node.page] = {x, y, h, scale, out: y, in: y};
+      out += `<rect x="${x}" y="${y}" width="${colW}" height="${h}" rx="2"><title>${esc(node.page)}: ${num(node.sessions)} sessions</title></rect>`;
+      out += `<text x="${x + colW + 4}" y="${y + Math.min(h, 24) / 2 + 4}">${esc(path(node.page))} · ${num(node.sessions)}</text>`;
+      y += h + gap;
+    });
+  });
+  const bands = f.links.map(l => {
+    const a = pos[l.from[0] + "|" + l.from[1]], b = pos[l.to[0] + "|" + l.to[1]];
+    if (!a || !b) return "";
+    const h = l.sessions * a.scale, x0 = a.x + colW, x1 = b.x, y0 = a.out, y1 = b.in, mx = (x0 + x1) / 2;
+    a.out += h; b.in += l.sessions * b.scale;
+    return `<path d="M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1} L${x1},${y1 + l.sessions * b.scale} C${mx},${y1 + l.sessions * b.scale} ${mx},${y0 + h} ${x0},${y0 + h} Z"><title>${esc(path(l.from[1]))} → ${esc(path(l.to[1]))}: ${num(l.sessions)} sessions</title></path>`;
+  }).join("");
+  $("diagram").innerHTML = cols.length ? `<svg viewBox="0 0 ${W} ${H + pad}" width="100%" role="img" aria-label="Visitor flow">${bands}${out}</svg>
+    <div class="sub">Band width is GA4 sessions. Pages under 1% of the sessions shown are grouped as “other”.</div>` : "";
+}
+
+function table(f) {
+  if (!f.arrivals.length) { $("tbl").innerHTML = `<div class="sub">No arrival pages in this window.</div>`; return; }
+  $("tbl").innerHTML = `<table><thead><tr><th>Arrival page</th><th class="n">Sessions (GA4)</th><th class="n">Share</th><th class="n">Exit rate</th>
+    <th>Top Search Console queries <span class="badge">keyword estimate</span></th></tr></thead><tbody>` +
+    f.arrivals.map(a => `<tr class="${a.page === focus ? "pick focus" : "pick"}" data-page="${esc(a.page)}"><td>${esc(path(a.page))}</td>
+      <td class="n">${num(a.sessions)}</td><td class="n">${pct(a.share)}</td><td class="n">${pct(a.exit_rate)}</td>
+      <td>${a.queries.length ? a.queries.map(x => `${esc(x.query)} <span class="sub">${num(x.clicks)} clicks</span>`).join("<br>") : "–"}</td></tr>`).join("") +
+    `</tbody></table><div class="sub">Click an arrival page to focus the flow on it.</div>`;
+  $("tbl").querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => { focus = tr.dataset.page === focus ? null : tr.dataset.page; load(); });
+}
+
+form.onsubmit = e => { e.preventDefault(); load(); };
+form.traffic.onchange = () => load();
+$("last28").onclick = () => load(true);
+$("unfocus").onclick = () => { focus = null; load(); };
+load(true);
+</script>
+</body>
+</html>

@@ -125,3 +125,25 @@ A non-brand query on page 1 (average position below 8) with at least 100 impress
 A query with average position 8–20 over the last 28 data days and at least 10 impressions; tagged on-target when it is a close variant of the page's keyword target, else off-target (review signal only).
 
 **Spend light**: the green/red/grey dot and last refresh date beside every paid control; red when the data is more than 30 days old.
+
+## Visitor flow
+
+**Session**:
+One visit to the site as GA4 counts it. The flow's band widths and arrival-page counts are sessions. Not the same count as Search Console clicks, so the two never share a label.
+_Avoid_: visit, click, user
+
+**Arrival page**:
+The first page of a session (GA4's landing page).
+_Avoid_: landing page, entry page
+
+**Exit page**:
+The last page of a session.
+_Avoid_: drop-off page
+
+**Visitor flow**:
+The `/flow` view of sessions moving from arrival page through up to three following pages to the exit page, band width by sessions, pages under 1% of the sessions shown grouped as "other". Defaults to the last 28 days, organic search only. Following pages and exit pages need per-session paths, which GA4's Data API does not give (the BigQuery export does).
+_Avoid_: user journey, path analysis
+
+**Keyword estimate**:
+The top Search Console queries for an arrival page over the same window, shown beside it. An estimate of which searches fed that page's sessions, not per-visitor data: GA4 hides organic keywords.
+_Avoid_: keywords per session, entry keywords

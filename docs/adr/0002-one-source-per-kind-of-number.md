@@ -7,6 +7,7 @@ DataForSEO Labs is a database snapshot that lags weeks to months, and for sereni
 - **Competitor positions elsewhere:** Labs, labelled as an estimate.
 - **Volume of a keyword target:** the targets doc (`docs/keyword-targets.md`, Google Ads UK monthly), wherever that keyword appears. Amended 2026-11-15: the rank tracker also shows DataForSEO clickstream volume beside it, labelled and dated, fetched only on request and cached for 30 days. The Ads figure stays the one used for sorting and decisions.
 - **Volume of other keywords, KD, traffic and traffic value:** Labs, labelled as an estimate. Search Console impressions are shown alongside where we have them.
+- **Sessions, arrival pages, exit pages and paths (visitor flow):** GA4 (Data API, read-only), labelled with the property and an "as of" time. Added 2026-11-20. The Search Console queries shown beside each arrival page are labelled a keyword estimate: GA4 hides organic keywords, so the join is by arrival page and window only. GA4 sessions and Search Console clicks are different counts and are never labelled alike.
 - **Map pack ranks (ours and theirs):** the map-pack run, since Search Console has no pack data. Our organic position on that page is shown next to the Search Console figure, which is the one to trust.
 
 ## Consequences
