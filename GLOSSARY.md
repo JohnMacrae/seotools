@@ -147,4 +147,3 @@ _Avoid_: user journey, path analysis
 **Keyword estimate**:
 The top Search Console queries for an arrival page over the same window, shown beside it. An estimate of which searches fed that page's sessions, not per-visitor data: GA4 hides organic keywords.
 _Avoid_: keywords per session, entry keywords
-
