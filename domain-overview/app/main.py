@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import clickstream, compare, crawl, dfs, digest, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
+from . import clickstream, compare, crawl, dfs, digest, flow, ga4, gsc, health, journal, journal_repo, linkgraph, linkmap, mappack, pagegap, progress, rankings, sites, supporting, targets, spend
 from .linkplan import norm as lp_norm
 
 DB_PATH = Path(os.environ.get("DB_PATH", "/data/overview.db"))
@@ -497,6 +497,11 @@ def digest_page():
     return FileResponse(STATIC / "digest.html")
 
 
+@app.get("/flow")
+def flow_page():
+    return FileResponse(STATIC / "flow.html")
+
+
 @app.post("/api/crawl")
 async def start_crawl(domain: str):
     d = clean_domain(domain)
@@ -583,6 +588,46 @@ def api_digest(refresh: bool = False):
             "page2": digest.page2(d["rows"], tbp, vols), "low_ctr": digest.low_ctr(d["rows"], tbp, vols),
             "decaying": digest.decay(d["daily"], end),
             "thresholds": digest.thresholds(), "fetched_at": d["fetched_at"], "volumes": vstatus}
+
+
+FLOW_DAYS = 28
+
+
+@app.get("/api/flow")
+def api_flow(start: str | None = None, end: str | None = None, traffic: str = "organic", arrival: str | None = None):
+    """Visitor flow (free): sessions and arrival pages from GA4, top Search Console queries per arrival page
+    as a keyword estimate. Default window: the last FLOW_DAYS days to yesterday, organic search only."""
+    if traffic not in ("organic", "all"):
+        raise HTTPException(400, "traffic must be organic or all")
+    try:
+        b = dt.date.fromisoformat(end) if end else dt.date.today() - dt.timedelta(days=1)
+        a = dt.date.fromisoformat(start) if start else b - dt.timedelta(days=FLOW_DAYS - 1)
+    except ValueError:
+        raise HTTPException(400, "start and end must be YYYY-MM-DD")
+    if a > b:
+        raise HTTPException(400, "start is after end")
+    site = sites.CURRENT.get() or _site()
+    try:
+        g = ga4.sessions(a, b)
+    except LookupError:
+        raise HTTPException(404, f"{site['name']} has no GA4 property configured")
+    except ga4.GA4Error as e:
+        raise HTTPException(502, str(e))
+    host = gsc.site_host() or site["name"]
+    rows = [{**r, "pages": [gsc.normalise(f"https://{host}{p}", host) or p if p.startswith("/") else p
+                            for p in r["pages"]]} for r in g["rows"]]
+    with closing(db()) as con:
+        q = [dict(r) for r in con.execute(
+            "SELECT page, query, clicks, impressions FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
+            (a.isoformat(), b.isoformat()))]
+        q_last = con.execute("SELECT MAX(date) FROM gsc_query_daily WHERE date BETWEEN ? AND ?",
+                             (a.isoformat(), b.isoformat())).fetchone()[0]
+    return {"window": {"start": a.isoformat(), "end": b.isoformat()}, "traffic": traffic, "arrival": arrival,
+            "sources": {"sessions": {"source": "GA4", "property": g["property"], "as_of": g["fetched_at"],
+                                     "first_day": g["first_day"]},
+                        "queries": {"source": "Search Console", "as_of": q_last, "estimate": True}},
+            "paths": False, "paths_note": ga4.PATHS_NOTE,
+            "flow": flow.build(rows, q, organic=traffic == "organic", focus=arrival, paths=False)}
 
 
 @app.post("/api/digest/volumes")
