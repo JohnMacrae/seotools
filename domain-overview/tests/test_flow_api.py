@@ -134,3 +134,22 @@ def test_bad_window_is_rejected(env):
 def test_flow_page_is_served(env):
     c, _ = env
     assert c.get("/flow").status_code == 200
+
+
+def test_queries_follow_the_selected_window(env):
+    c, _ = env
+    def top(start, end):
+        j = c.get(f"/api/flow?site=serenity&start={start}&end={end}").json()
+        d = next(x for x in j["flow"]["arrivals"] if x["page"].endswith("/dresses"))
+        return [x["query"] for x in d["queries"]], j["sources"]["queries"]["as_of"]
+    assert top("2026-10-01", "2026-10-28") == (["wedding dresses colchester", "bridal shop"], "2026-10-11")
+    assert top("2026-07-25", "2026-08-05") == (["out of window"], "2026-08-01")  # a different window, different queries
+    assert top("2026-09-01", "2026-09-10") == ([], None)  # no Search Console data: empty and no as-of, not zeros
+
+
+def test_arrival_focus_narrows_flow_but_keeps_the_table(env):
+    c, _ = env
+    j = c.get("/api/flow?site=serenity&start=2026-10-01&end=2026-10-28&arrival=https://serenitybrides.com/").json()
+    assert j["arrival"] == "https://serenitybrides.com/"
+    assert [(n["page"], n["sessions"]) for n in j["flow"]["columns"][0]] == [("https://serenitybrides.com/", 40)]
+    assert len(j["flow"]["arrivals"]) == 2
