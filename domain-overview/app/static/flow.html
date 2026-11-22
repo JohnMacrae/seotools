@@ -132,7 +132,7 @@ function table(f) {
     <th>Top Search Console queries <span class="badge">keyword estimate</span></th></tr></thead><tbody>` +
     f.arrivals.map(a => `<tr class="${a.page === focus ? "pick focus" : "pick"}" data-page="${esc(a.page)}"><td>${esc(path(a.page))}</td>
       <td class="n">${num(a.sessions)}</td><td class="n">${pct(a.share)}</td><td class="n">${pct(a.exit_rate)}</td>
-      <td>${a.queries.length ? a.queries.map(x => `${esc(x.query)} <span class="sub">${num(x.clicks)} clicks</span>`).join("<br>") : "–"}</td></tr>`).join("") +
+      <td>${a.queries.length ? a.queries.map(x => `${esc(x.query)} <span class="sub">${num(x.clicks)} clicks, ${num(x.impressions)} impressions</span>`).join("<br>") : "–"}</td></tr>`).join("") +
     `</tbody></table><div class="sub">Click an arrival page to focus the flow on it.</div>`;
   $("tbl").querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => { focus = tr.dataset.page === focus ? null : tr.dataset.page; load(); });
 }
