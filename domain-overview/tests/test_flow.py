@@ -1,4 +1,4 @@
-"""Visitor flow builder (#56): GA4 session paths + Search Console rows in, flow structure out."""
+"""Visitor flow builder (#54): GA4 session paths + Search Console rows in, flow structure out."""
 import sys
 from pathlib import Path
 

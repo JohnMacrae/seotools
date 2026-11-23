@@ -1,4 +1,4 @@
-"""GA4 Data API client (#56): sessions by arrival page and channel, read-only, free.
+"""GA4 Data API client (#54): sessions by arrival page and channel, read-only, free.
 
 Uses the service account already mounted for Search Console (GSC_KEY_FILE); it must be a Viewer on the property.
 The Data API returns aggregates only: it has a landing page dimension but no per-session page sequence and no
@@ -24,6 +24,10 @@ _CACHE: dict[tuple, tuple[float, dict]] = {}
 
 
 class GA4Error(Exception):
+    pass
+
+
+class NoProperty(LookupError):
     pass
 
 
@@ -67,7 +71,7 @@ def sessions(start: dt.date, end: dt.date) -> dict:
     first_day: the first day in the window with any sessions (None when there are none)."""
     prop = property_id()
     if not prop:
-        raise LookupError("no GA4 property configured for this site")
+        raise NoProperty("no GA4 property configured for this site")
     key = (prop, start, end)
     hit = _CACHE.get(key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
@@ -86,10 +90,18 @@ def sessions(start: dt.date, end: dt.date) -> dict:
         raise
     except Exception as e:  # noqa: BLE001 - auth / network problems surface as one error type
         raise GA4Error(f"GA4 not reachable: {type(e).__name__}: {e}"[:400])
+    try:
+        out = _parse(land, first, prop)
+    except (KeyError, IndexError, ValueError, TypeError) as e:
+        raise GA4Error(f"GA4 not reachable: unexpected Data API response ({type(e).__name__}: {e})"[:400])
+    _CACHE[key] = (time.time(), out)
+    return out
+
+
+def _parse(land: list[dict], first: list[dict], prop: str) -> dict:
     day = next((r["dimensionValues"][0]["value"] for r in first if float(r["metricValues"][0]["value"]) > 0), None)
     out = {"property": prop, "fetched_at": dt.datetime.utcnow().isoformat(timespec="seconds"),
            "first_day": dt.datetime.strptime(day, "%Y%m%d").date().isoformat() if day else None,
            "rows": [{"pages": [r["dimensionValues"][0]["value"]], "channel": r["dimensionValues"][1]["value"],
                      "sessions": int(r["metricValues"][0]["value"])} for r in land]}
-    _CACHE[key] = (time.time(), out)
     return out

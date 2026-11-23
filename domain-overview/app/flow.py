@@ -1,4 +1,4 @@
-"""Visitor flow (#56): arrival page -> up to 3 following pages -> exit page, from GA4 session paths.
+"""Visitor flow (#54): arrival page -> up to 3 following pages -> exit page, from GA4 session paths.
 
 Pure: rows in, flow structure out. Fetching lives in `ga4.py` and the endpoint."""
 from __future__ import annotations
