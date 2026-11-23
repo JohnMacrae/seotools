@@ -153,3 +153,20 @@ def test_arrival_focus_narrows_flow_but_keeps_the_table(env):
     assert j["arrival"] == "https://serenitybrides.com/"
     assert [(n["page"], n["sessions"]) for n in j["flow"]["columns"][0]] == [("https://serenitybrides.com/", 40)]
     assert len(j["flow"]["arrivals"]) == 2
+
+
+def test_ga4_responses_are_cached_briefly(env):
+    c, fake = env
+    url = "/api/flow?site=serenity&start=2026-10-01&end=2026-10-28"
+    c.get(url)
+    n = len(fake.calls)
+    assert n
+    c.get(url + "&traffic=all")  # same window: served from the cache, no Data API quota spent
+    assert len(fake.calls) == n
+    c.get("/api/flow?site=serenity&start=2026-10-02&end=2026-10-28")  # another window is a new fetch
+    assert len(fake.calls) > n
+    for k, (t, v) in list(ga4._CACHE.items()):  # age every entry past CACHE_SECONDS
+        ga4._CACHE[k] = (t - ga4.CACHE_SECONDS - 1, v)
+    m = len(fake.calls)
+    c.get(url)  # expired: fetched again
+    assert len(fake.calls) > m
