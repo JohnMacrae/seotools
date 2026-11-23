@@ -609,7 +609,7 @@ def api_flow(start: str | None = None, end: str | None = None, traffic: str = "o
     site = sites.CURRENT.get() or _site()
     try:
         g = ga4.sessions(a, b)
-    except LookupError:
+    except ga4.NoProperty:
         raise HTTPException(404, f"{site['name']} has no GA4 property configured")
     except ga4.GA4Error as e:
         raise HTTPException(502, str(e))

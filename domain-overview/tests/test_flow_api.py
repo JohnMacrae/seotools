@@ -1,4 +1,4 @@
-"""Visitor flow endpoint (#56) with GA4 faked at the HTTP client: labelling, unreachable GA4, site without a property."""
+"""Visitor flow endpoint (#54) with GA4 faked at the HTTP client: labelling, unreachable GA4, site without a property."""
 import datetime as dt
 import json
 import sys
@@ -170,3 +170,11 @@ def test_ga4_responses_are_cached_briefly(env):
     m = len(fake.calls)
     c.get(url)  # expired: fetched again
     assert len(fake.calls) > m
+
+
+def test_malformed_ga4_response_is_a_ga4_error_not_a_missing_property(env, monkeypatch):
+    c, fake = env
+    monkeypatch.setattr(ga4, "_client", lambda: httpx.Client(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"rows": [{"metricValues": []}], "rowCount": 1}))))
+    r = c.get("/api/flow?site=serenity&start=2026-10-01&end=2026-10-28")
+    assert r.status_code == 502 and r.json()["detail"].startswith("GA4 not reachable")
